@@ -7,6 +7,10 @@ SHOULD INSTALL NAXSI
 Base installation package:
 sudo apt update;sudo apt install mariadb-server certbot python3-certbot-nginx zip htop sendmail nginx sshfs curl git ufw fail2ban nginx php8.4-fpm php8.4-mysql php8.4-mbstring php8.4-zip php8.4-intl php8.4-imagick php8.4-gd php8.4-curl php8.4-dom php8.4-xml php8.4-cli redis-server php8.4-redis postfix unzip logrotate net-tools awscli composer ffmpeg -y;
 
+Install AWS CLI:
+unzip awscliv2.zip
+sudo ./aws/install
+rm -rf aws awscliv2.zip
 
 
 
