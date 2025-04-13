@@ -1,16 +1,16 @@
+TODO
 SHOULD INCREASE MAX UPLOAD SIZE
-
 SHOULD TURN ON OPCACHE
-
 SHOULD INSTALL NAXSI
 
-PHP7.2 ... remember to change .conf file content as well
 
-** Useful for zipping stuff during backups **
-sudo apt-get install zip
+Base installation package:
+sudo apt update;sudo apt install mariadb-server certbot python3-certbot-nginx zip htop sendmail nginx sshfs curl git ufw fail2ban nginx php8.4-fpm php8.4-mysql php8.4-mbstring php8.4-zip php8.4-intl php8.4-imagick php8.4-gd php8.4-curl php8.4-dom php8.4-xml php8.4-cli redis-server php8.4-redis postfix unzip logrotate net-tools awscli composer ffmpeg -y;
 
-** Install FFMPEG for audio site **
-sudo apt-get install ffmpeg
+
+
+
+
 
 ** For low RAM servers, need swap file to stop shit crashing when memory maxes out: **
 sudo fallocate -l 2G /swapfile
