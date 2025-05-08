@@ -1,4 +1,7 @@
-sudo apt install pigz
+sudo apt install pigz;
+sudo apt install getmail6;
+
+
 
 TODO
 SHOULD INCREASE MAX UPLOAD SIZE
