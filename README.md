@@ -1,6 +1,8 @@
 sudo apt install pigz;
 sudo apt install getmail6;
 
+$ sudo apt-get install php8.4-sqlite3
+
 
 
 TODO
