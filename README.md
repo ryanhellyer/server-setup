@@ -1,3 +1,39 @@
+$ sudo nano /etc/php/8.4/fpm/conf.d/10-opcache.ini
+
+; configuration for php opcache module
+; priority=10
+zend_extension=opcache.so
+
+; Enable OPcache
+opcache.enable=1
+opcache.enable_cli=0
+
+; Memory settings
+opcache.memory_consumption=128
+opcache.interned_strings_buffer=16
+opcache.max_accelerated_files=10000
+
+; Performance settings
+opcache.revalidate_freq=0
+opcache.validate_timestamps=0
+opcache.fast_shutdown=1
+
+; For production - disable timestamp validation (faster)
+; Set validate_timestamps=1 if you want to check file changes (slower but useful in dev)
+opcache.validate_timestamps=0
+
+; JIT compiler (optional, can improve performance further)
+opcache.jit=1255
+opcache.jit_buffer_size=64M
+
+
+
+
+
+
+
+
+
 sudo apt install pigz;
 sudo apt install getmail6;
 
