@@ -1,3 +1,15 @@
+# Redis
+sudo mkdir -p /etc/redis
+sudo cp /usr/share/redis/redis.conf /etc/redis/redis.conf;
+sudo nano /etc/redis/redis.conf
+ * maxmemory 1024mb
+ * maxmemory-policy: allkeys-lru
+sudo systemctl restart redis-server
+
+
+
+
+# PHP OPcache
 $ sudo nano /etc/php/8.4/fpm/conf.d/10-opcache.ini
 
 ; configuration for php opcache module
