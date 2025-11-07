@@ -6,6 +6,13 @@ sudo nano /etc/redis/redis.conf
  * maxmemory-policy: allkeys-lru
 sudo systemctl restart redis-server
 
+# Redis possible fix for when Redis can't read it's own config files - it may work without this, but it may not be able to do internal analysis if it fails well - I didn't fully understand this. It came from AI advice.
+sudo chmod 755 /etc/redis/ && sudo chown root:root /etc/redis/ && sudo chmod 644 /etc/redis/redis.conf && sudo 
+  chown root:root /etc/redis/redis.conf && sudo chmod 755 /var/lib/redis && sudo chown redis:redis /var/lib/redis &&
+   sudo chmod 755 /var/log/redis && sudo chown redis:redis /var/log/redis && sudo mkdir -p /run/redis && sudo chown 
+  redis:redis /run/redis && sudo chmod 755 /run/redis && echo "d /run/redis 0755 redis redis -" | sudo tee 
+  /etc/tmpfiles.d/redis-server.conf && sudo systemctl restart redis-server
+
 
 
 
