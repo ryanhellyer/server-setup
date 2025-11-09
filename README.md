@@ -33,18 +33,17 @@ opcache.interned_strings_buffer=16
 opcache.max_accelerated_files=10000
 
 ; Performance settings
-opcache.revalidate_freq=0
-opcache.validate_timestamps=0
+opcache.revalidate_freq=20
+opcache.validate_timestamps=1
 opcache.fast_shutdown=1
 
 ; For production - disable timestamp validation (faster)
 ; Set validate_timestamps=1 if you want to check file changes (slower but useful in dev)
-opcache.validate_timestamps=0
+opcache.validate_timestamps=1
 
 ; JIT compiler (optional, can improve performance further)
 opcache.jit=1255
 opcache.jit_buffer_size=64M
-
 
 
 
