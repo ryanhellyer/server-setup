@@ -1,3 +1,9 @@
+# Brotli
+sudo add-apt-repository universe
+sudo apt update
+sudo apt install libnginx-mod-http-brotli-filter libnginx-mod-http-brotli-static
+
+
 # Redis
 sudo mkdir -p /etc/redis
 sudo cp /usr/share/redis/redis.conf /etc/redis/redis.conf;
