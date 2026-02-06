@@ -1,3 +1,10 @@
+# Mount Hetzner box
+sudo mkdir -p /var/gmail
+sudo chown $USER:$USER /var/gmail
+sshfs -p 23 u458814@u458814.your-storagebox.de:/home/gmail /var/gmail
+
+
+
 # Brotli
 sudo add-apt-repository universe
 sudo apt update
