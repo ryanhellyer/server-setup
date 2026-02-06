@@ -5,6 +5,12 @@ sshfs -p 23 u458814@u458814.your-storagebox.de:/home/gmail /var/gmail
 
 
 
+sudo nano /etc/fstab
+u458814@u458814.your-storagebox.de:/home/gmail /var/gmail fuse.sshfs x-systemd.automount,port=23,allow_other,reconnect,entry_timeout=0,attr_timeout=0,cache=no,_netdev 0 0
+
+
+
+
 # Brotli
 sudo add-apt-repository universe
 sudo apt update
