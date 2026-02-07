@@ -3,6 +3,15 @@ sudo mkdir -p /var/gmail
 sudo chown $USER:$USER /var/gmail
 sshfs -p 23 u458814@u458814.your-storagebox.de:/home/gmail /var/gmail
 
+sudo mkdir -p /var/yandex-disk
+sudo chown $USER:$USER /var/yandex-disk
+sshfs -p 23 u458814@u458814.your-storagebox.de:/home/gmail /var/yandex-disk
+
+sudo mkdir -p /var/databases
+sudo chown $USER:$USER /var/databases
+sshfs -p 23 u458814@u458814.your-storagebox.de:/home/databases /var/databases
+
+
 
 
 sudo nano /etc/fstab
