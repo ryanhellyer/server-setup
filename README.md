@@ -15,7 +15,10 @@ sshfs -p 23 u458814@u458814.your-storagebox.de:/home/databases /var/databases
 
 
 sudo nano /etc/fstab
-u458814@u458814.your-storagebox.de:/home/gmail /var/gmail fuse.sshfs x-systemd.automount,port=23,allow_other,reconnect,entry_timeout=0,attr_timeout=0,cache=no,_netdev 0 0
+# Adding mount points for primary Hetzner box folders
+u458814@u458814.your-storagebox.de:/home/gmail /var/gmail fuse.sshfs x-systemd.automount,port=23,allow_other,reconnect,IdentityFile=/home/ryan/.ssh/id_ed25519,entry_timeout=0,attr_timeout=0,cache=no,_netdev 0 0
+u458814@u458814.your-storagebox.de:/home/yandex-disk /var/yandex-disk fuse.sshfs x-systemd.automount,port=23,allow_other,reconnect,IdentityFile=/home/ryan/.ssh/id_ed25519,entry_timeout=0,attr_timeout=0,cache=no,_netdev 0 0
+u458814@u458814.your-storagebox.de:/home/databases /var/databases fuse.sshfs x-systemd.automount,port=23,allow_other,reconnect,IdentityFile=/home/ryan/.ssh/id_ed25519,entry_timeout=0,attr_timeout=0,cache=no,_netdev 0 0
 
 
 
