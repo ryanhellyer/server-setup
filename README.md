@@ -11,6 +11,10 @@ sudo mkdir -p /var/databases
 sudo chown $USER:$USER /var/databases
 sshfs -p 23 u458814@u458814.your-storagebox.de:/home/databases /var/databases
 
+sudo mdkir -p /var/sync
+sudo chown $USER:$USER /var/sync
+sshfs -p 23 u513410@u513410.your-storagebox.de:/home/sync /var/sync
+
 
 
 
