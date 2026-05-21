@@ -1,3 +1,7 @@
+# Needed for Spam Destroyer site
+sudo apt install php8.4-intl
+
+
 # Mount Hetzner box
 sudo mkdir -p /var/gmail
 sudo chown $USER:$USER /var/gmail
