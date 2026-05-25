@@ -1,5 +1,5 @@
 # Needed for Spam Destroyer site
-sudo apt install php8.5-intl php8.5-mbstring php8.5-curl
+sudo apt install php8.5-intl php8.5-mbstring php8.5-curl php8.5-gd
 
 
 # Mount Hetzner box
