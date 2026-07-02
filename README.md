@@ -1,3 +1,6 @@
+# Needed for chat.hellyer.kiwi
+sudo apt install podman podman-compose
+
 # Needed for Spam Destroyer site
 sudo apt install php8.5-intl php8.5-mbstring php8.5-curl php8.5-gd
 
