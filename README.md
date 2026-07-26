@@ -1,3 +1,5 @@
+sudo apt install php8.5-mysql
+
 # Needed for chat.hellyer.kiwi
 sudo apt install podman podman-compose
 
