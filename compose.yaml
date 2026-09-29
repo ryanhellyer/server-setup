@@ -42,6 +42,11 @@ services:
       - ./php/fpm-www.conf:/etc/php/8.5/fpm/pool.d/www.conf:ro
       - php-socket:/run/php
       - ${WWW_ROOT:-/home/ryan/www}:/var/www
+      # Per-site logs (~/logs) — same host dir nginx mounts, so application
+      # logs are kept OUTSIDE the web roots and never land in a site
+      # backup/snapshot. Point Laravel LOG_PATH / WP_DEBUG_LOG / PHP error_log
+      # at /var/log/sites/<site>/ inside the containers.
+      - ${LOG_ROOT:-/home/ryan/logs}:/var/log/sites
     networks: [web, backend]
     restart: unless-stopped
 
