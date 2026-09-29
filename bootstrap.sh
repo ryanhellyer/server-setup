@@ -45,7 +45,7 @@ TARGET_USER="root"
 ADMIN_USER="ryan"
 IDENTITY=""
 DO_HARDEN=1
-SETUP_URL="https://raw.githubusercontent.com/ryanhellyer/server-setup2/master/install/setup.sh"
+SETUP_URL="https://raw.githubusercontent.com/ryanhellyer/server-setup/master/install/setup.sh"
 # INSTALL_DIR is resolved after option parsing (it depends on --admin-user).
 INSTALL_DIR=""
 

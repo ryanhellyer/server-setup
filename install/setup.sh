@@ -4,7 +4,7 @@
 #
 # Single-line usage on a bare Ubuntu host (no docs, no keys, no git):
 #
-#   curl -fsSL https://raw.githubusercontent.com/ryanhellyer/server-setup2/master/install/setup.sh \
+#   curl -fsSL https://raw.githubusercontent.com/ryanhellyer/server-setup/master/install/setup.sh \
 #     -o /tmp/setup.sh && sudo bash /tmp/setup.sh
 #
 # Two modes, auto-detected:
@@ -63,7 +63,7 @@ fi
 # configs, certs) are gitignored, so an extract never touches them.
 install_repo_files() { # "$1" = destination dir
   local dest="$1"
-  local TARBALL_URL="${SERVER_SETUP_TARBALL:-https://github.com/ryanhellyer/server-setup2/archive/refs/heads/master.tar.gz}"
+  local TARBALL_URL="${SERVER_SETUP_TARBALL:-https://github.com/ryanhellyer/server-setup/archive/refs/heads/master.tar.gz}"
   mkdir -p "$dest"
   # Resolve the live branch SHA first: SHA tarballs are immutable, so a
   # CDN-cached stale branch tarball is never used.
@@ -91,7 +91,7 @@ install_repo_files() { # "$1" = destination dir
   # Store the refs/heads BRANCH URL (not the SHA-pinned URL we downloaded):
   # deploy.sh parses it to re-resolve the live SHA on every deploy. .last-sha
   # records what's actually applied so it can skip when nothing changed.
-  printf '%s\n' "https://github.com/ryanhellyer/server-setup2/archive/refs/heads/master.tar.gz" > "$dest/.tarball"
+  printf '%s\n' "https://github.com/ryanhellyer/server-setup/archive/refs/heads/master.tar.gz" > "$dest/.tarball"
   chmod 600 "$dest/.tarball"
   [ -n "$sha" ] && printf '%s\n' "$sha" > "$dest/.last-sha"
   return 0
