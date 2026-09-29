@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# =============================================================================
+# pod-restart — restart a stack container, or the whole stack.
+#
+#   pod-restart php-fpm        # restart one container
+#   pod-restart --all          # restart every container (asks first)
+#   pod-restart --all -y       # ... without the prompt (scripting)
+#
+# For a graceful nginx reload without dropping connections use `nginx-reload`
+# instead; this does a full `podman restart`.
+# =============================================================================
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+REPO_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+source "$REPO_DIR/scripts/lib-containers.sh"
+
+usage() {
+  cat <<EOF
+usage: $(basename "$0") <container> | --all [-y]
+
+  container   one of: ${ALL_CONTAINERS[*]}
+  --all       restart every stack container
+  -y, --yes   don't ask before --all
+  -h, --help  show this help
+EOF
+}
+
+for arg in "$@"; do
+  case "$arg" in -h|--help) usage; exit 0 ;; esac
+done
+
+if [ "$(id -u)" -ne 0 ]; then
+  exec sudo "$SELF" "$@"
+fi
+
+CONTAINER=""
+ALL=0
+YES=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --all) ALL=1; shift ;;
+    -y|--yes) YES=1; shift ;;
+    --) shift; break ;;
+    -*) echo "pod-restart: unknown option '$1'" >&2; usage >&2; exit 2 ;;
+    *) CONTAINER="$1"; shift ;;
+  esac
+done
+
+if [ "$ALL" = 1 ]; then
+  if [ "$YES" != 1 ]; then
+    printf 'Restart all %d stack containers? [y/N] ' "${#ALL_CONTAINERS[@]}"
+    read -r answer </dev/tty || answer=""
+    case "$answer" in
+      y|Y|yes|YES) ;;
+      *) echo "Aborted."; exit 0 ;;
+    esac
+  fi
+  exec podman restart "${ALL_CONTAINERS[@]}"
+fi
+
+[ -n "$CONTAINER" ] || { usage >&2; exit 2; }
+if ! podman container exists "$CONTAINER" 2>/dev/null; then
+  echo "pod-restart: no such container '$CONTAINER'." >&2
+  echo "Stack containers: ${ALL_CONTAINERS[*]}" >&2
+  exit 1
+fi
+
+exec podman restart "$CONTAINER"

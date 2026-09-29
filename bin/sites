@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# =============================================================================
+# sites — list the sites deployed under the host web root (~/www).
+#
+#   sites
+#
+# Shows each site directory with a best-effort type (symfony / laravel /
+# wordpress / node / env / static) and its database name, using the same
+# detection as scripts/provision-site.sh. Read-only; safe to run as the admin
+# user (no sudo, no containers).
+# =============================================================================
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+REPO_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+source "$REPO_DIR/scripts/lib-paths.sh"
+source "$REPO_DIR/scripts/lib-env.sh"
+[ -r "$REPO_DIR/.env" ] && set -a && . "$REPO_DIR/.env" && set +a
+WWW_ROOT="$(resolve_www_root)"
+
+case "${1:-}" in
+  -h|--help)
+    cat <<EOF
+usage: $(basename "$0")
+
+List the sites under the web root (\$WWW_ROOT, default ~/www) with their type.
+EOF
+    exit 0 ;;
+esac
+
+[ -d "$WWW_ROOT" ] || { echo "sites: web root '$WWW_ROOT' does not exist." >&2; exit 1; }
+
+detect_type() { # DIR -> type
+  local d="$1"
+  if [ -f "$d/.env" ] && grep -qE '^[[:space:]]*DATABASE_URL=' "$d/.env"; then
+    echo symfony
+  elif [ -f "$d/artisan" ] || { [ -f "$d/.env" ] && grep -qE '^[[:space:]]*DB_CONNECTION=' "$d/.env"; }; then
+    echo laravel
+  elif [ -f "$d/wp-config.php" ]; then
+    echo wordpress
+  elif [ -f "$d/package.json" ]; then
+    echo node
+  elif [ -f "$d/.env" ]; then
+    echo env
+  else
+    echo static
+  fi
+}
+
+detect_db() { # DIR TYPE -> db name or -
+  local d="$1" type="$2" db=""
+  case "$type" in
+    wordpress)
+      db="$(sed -nE "s/.*define\(\s*['\"]DB_NAME['\"]\s*,\s*['\"]([^'\"]+)['\"].*/\1/p" "$d/wp-config.php" 2>/dev/null | head -1)"
+      ;;
+    laravel)
+      db="$(get_env "$d/.env" DB_DATABASE || true)"
+      ;;
+    symfony)
+      db="$(get_env "$d/.env" DATABASE_URL || true)"
+      db="${db%%\?*}"; db="${db##*/}"
+      ;;
+  esac
+  printf '%s' "${db:--}"
+}
+
+printf '%-34s %-10s %s\n' SITE TYPE DATABASE
+count=0
+shopt -s nullglob
+for dir in "$WWW_ROOT"/*/; do
+  name="$(basename "$dir")"
+  case "$name" in acme|lost+found) continue ;; esac
+  type="$(detect_type "$dir")"
+  printf '%-34s %-10s %s\n' "$name" "$type" "$(detect_db "$dir" "$type")"
+  count=$((count + 1))
+done
+
+echo
+echo "$count site(s) in $WWW_ROOT"

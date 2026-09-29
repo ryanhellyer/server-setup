@@ -1,3 +1,0 @@
-# Renew Lets Encrypt certificates every Monday at 2:30am and reload Nginx at 2:35am (to ensure it uses the new certificates)
-30 2 * * 1 /usr/bin/letsencrypt renew >> /var/log/le-renew.log
-35 2 * * 1 /bin/systemctl reload nginx

@@ -1,0 +1,16 @@
+[retriever]
+type = SimpleIMAPSSLRetriever
+server = imap.gmail.com
+username = ryanhellyer@gmail.com
+# password REDACTED — restore from temp-backup/backups/secrets.env (GMAIL_APP_PASSWORD)
+# password =
+
+# "ryanhellyer@yahoo.co.nz" used to be a mailbox here, but was removed as it kept downloading every single mail every single time.
+mailboxes = ("Inbox", "[Gmail]/Sent Mail", "Contact form", "Financial",  "Insurance", "Landlord", "Medical", "Payments", "Pension", "Postal mail", "Potentially tax relevant")
+
+[destination]
+type = Maildir
+path = /var/gmail/
+
+[options]
+read_all = false

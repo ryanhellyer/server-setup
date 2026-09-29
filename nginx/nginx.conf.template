@@ -1,0 +1,161 @@
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+error_log /var/log/nginx/error.log;
+include /etc/nginx/modules-enabled/*.conf;
+
+events {
+	worker_connections 1024;
+	multi_accept on;
+}
+
+http {
+
+	##
+	# Basic settings
+	##
+	sendfile on;
+	tcp_nopush on;
+	types_hash_max_size 2048;
+	server_tokens off;
+	keepalive_timeout 15;
+	client_max_body_size 64m;
+
+	include /etc/nginx/mime.types;
+	default_type application/octet-stream;
+
+	##
+	# SSL settings (shared by every vhost — change once, applies everywhere)
+	##
+	include /etc/nginx/snippets/ssl-params.conf;
+
+	##
+	# Security headers (http level; re-applied inside locations via the snippet)
+	##
+	include /etc/nginx/snippets/security-headers.conf;
+
+	##
+	# Logging
+	##
+	access_log /var/log/nginx/access.log;
+
+	##
+	# Compression (Brotli + Gzip fallback for older clients)
+	##
+	gzip on;
+	gzip_vary on;
+	gzip_proxied any;
+	gzip_comp_level 6;
+	gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+	brotli on;
+	brotli_comp_level 6;
+	brotli_static on;
+	brotli_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+
+	##
+	# FastCGI cache — ONE cache shared by every PHP site.
+	# keys_zone size is RAM for cache keys (64m on test; override with
+	# FASTCGI_CACHE_SIZE in .env). max_size caps the on-disk cache.
+	##
+	fastcgi_cache_path /var/cache/nginx levels=1:2 keys_zone=PRESSABL:__FASTCGI_CACHE_SIZE__ inactive=60m max_size=5g;
+	fastcgi_cache_key "$scheme$request_method$host$request_uri|$cache_locale";
+	fastcgi_cache_use_stale error timeout invalid_header http_500;
+
+	##
+	# Upstreams.
+	# Change the PHP version / socket HERE and every vhost follows.
+	##
+	upstream php-fpm { server unix:/run/php/php8.5-fpm.sock; }
+	# chat.hellyer.kiwi is served by Open WebUI (its own container).
+	#
+	# chat.hellyer.kiwi is proxied to the open-webui container. That proxy_pass
+	# uses a variable (set per-server in conf.d/node-proxy.conf) so nginx
+	# resolves the name at request time rather than startup — a podman-compose
+	# pod has no per-service DNS alias, and a static upstream name would make
+	# nginx fail to boot and crash-loop if open-webui is absent.
+
+	##
+	# Maps — cache control & platform detection.
+	# Chain separate map outputs (reusing a map inside its own default
+	# causes "cycle while evaluating variable" and 502s).
+	##
+	map $request_method $no_cache_method { default 0; POST 1; }
+	map $request_uri $no_cache_uri { default $no_cache_method; "~*(/wp-admin/|/xmlrpc.php|/wp-.*.php)" 1; }
+	map $http_cookie $no_cache { default $no_cache_uri; "~*(comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in)" 1; }
+
+	# Map domains to their platform type.
+	map $http_host $platform_type {
+		ryan.hellyer.kiwi      "laravel";
+		spam-destroyer.com     "laravel";
+		spam-destroyer.hellyer.kiwi "laravel";
+		health.hellyer.kiwi    "laravel";
+		default                "wordpress";
+	}
+
+	# Final no-cache decision combining platform + cookies.
+	map "$platform_type:$http_cookie" $no_cache_platform {
+		"~*wordpress:(comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_logged_in)" 1;
+		"~*laravel:.*" 0;
+		default 0;
+	}
+
+	# Bypass cache for admin paths.
+	map $request_uri $skip_cache_admin { default 0; ~*/admin/ 1; }
+
+	# Bypass cache for known logged-in session cookies.
+	map $http_cookie $skip_cache_logged_in {
+		"~*spam-annihilator-session" 1;
+		"~*kartastrophe-cup-session" 1;
+		default 0;
+	}
+
+	# Single "bypass cache" flag used by every PHP vhost (1 if ANY part is 1).
+	map "$no_cache:$no_cache_platform:$skip_cache_admin:$skip_cache_logged_in" $no_cache_final {
+		~1 1;
+		default 0;
+	}
+
+	# Per-site cache kill switch (a site debugging sessions, etc).
+	map $http_host $site_no_cache {
+		hostnames;
+		default 0;
+		kartastrophecup.de 1;
+	}
+
+	# Cache-key locale for instantattend.com (add more languages as the app grows).
+	map $cookie_ui_locale $cache_locale {
+		default en;
+		fr_FR   fr;
+		de_DE   de;
+		zh_CN   zh;
+		he_IL   he;
+	}
+
+	# WordPress Multisite blog IDs.
+	map $http_host $blogid {
+		default                    0;
+		geek.hellyer.kiwi          6;
+		dunedinicehockey.co.nz     5;
+		random.hellyer.kiwi        7;
+		ice.hellyer.kiwi           15;
+		nb.hellyer.kiwi            16;
+		external-posts             19;
+		hellyer.kiwi               24;
+		comic-glot.hellyer.kiwi    26;
+		offline-demo.hellyer.kiwi  27;
+		instagram.hellyer.kiwi     28;
+		salatkomplett.com          31;
+		tweets.hellyer.kiwi        17;
+		facebook.hellyer.kiwi      20;
+		freeadviceberlin.org       35;
+		berlin-advice.hellyer.kiwi 37;
+		psychedelicsocietyberlin.org psb;
+	}
+
+	##
+	# Virtual hosts — everything lives in conf.d/.
+	# Many domains are joined into a handful of server blocks (see conf.d/*.conf).
+	##
+	include /etc/nginx/conf.d/*.conf;
+}

@@ -1,0 +1,114 @@
+# Root Compose file — full hellyer.kiwi stack.
+# Orchestration:  sudo podman compose up -d --build
+# (podman-compose also works for older setups.)
+
+services:
+  nginx:
+    build: ./nginx
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+      - ./nginx/sites:/etc/nginx/sites:ro
+      - ./nginx/modules-enabled:/etc/nginx/modules-enabled:ro
+      - ./nginx/mime.types:/etc/nginx/mime.types:ro
+      - ./nginx/fastcgi_params:/etc/nginx/fastcgi_params:ro
+      - ./nginx/fastcgi.conf:/etc/nginx/fastcgi.conf:ro
+      - ./nginx/proxy_params:/etc/nginx/proxy_params:ro
+      - ./nginx/dhparam.pem:/etc/nginx/dhparam.pem:ro
+      - ./env/letsencrypt:/etc/letsencrypt:ro
+      - php-socket:/run/php:ro
+      - ${WWW_ROOT:-/home/ryan/www}:/var/www
+      - ${LOG_ROOT:-/home/ryan/logs}:/var/log/sites
+      - /var/log/nginx:/var/log/nginx
+      - /var/cache/nginx:/var/cache/nginx
+    depends_on:
+      - php
+      - node
+      - open-webui
+    networks: [web]
+    restart: unless-stopped
+
+  php:
+    build: ./php
+    container_name: php-fpm
+    volumes:
+      - ./php/10-opcache.ini:/etc/php/8.5/fpm/conf.d/10-opcache.ini:ro
+      - ./php/20-fpm-security.ini:/etc/php/8.5/fpm/conf.d/20-fpm-security.ini:ro
+      - ./php/fpm-www.conf:/etc/php/8.5/fpm/pool.d/www.conf:ro
+      - php-socket:/run/php
+      - ${WWW_ROOT:-/home/ryan/www}:/var/www
+    networks: [web, backend]
+    restart: unless-stopped
+
+  node:
+    build: ./node
+    container_name: node
+    volumes:
+      - ${WWW_ROOT:-/home/ryan/www}:/var/www
+    networks: [web]
+    restart: unless-stopped
+
+  # Open WebUI (chat.hellyer.kiwi) — its own container, proxied by nginx.
+  # The host data dir IS the container's /app/backend/data (SQLite + uploads).
+  # scripts/provision-openwebui.sh restores it from the Hetzner snapshot.
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    environment:
+      WEBUI_URL: ${OPENWEBUI_URL:-https://chat.hellyer.kiwi}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    volumes:
+      - ${WWW_ROOT:-/home/ryan/www}/chat.hellyer.kiwi:/app/backend/data
+    ports:
+      - "127.0.0.1:3000:8080"   # localhost only; nginx proxies via the web network
+    networks: [web]
+    # NO podman restart policy (deliberate): systemd supervises this unit
+    # (Restart=on-failure with a StartLimit, see install-systemd.sh), so a
+    # crash-looping app — e.g. a corrupt SQLite DB — can't restart forever and
+    # peg a CPU. Resource limits stop it starving the rest of the stack.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1536m
+
+  mariadb:
+    image: docker.io/mariadb:11
+    container_name: mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+    volumes:
+      - /var/lib/mysql:/var/lib/mysql
+      - ./maria/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+    networks: [backend]
+    restart: unless-stopped
+
+  # Valkey is a drop-in, RESP-compatible fork of Redis. It keeps the `redis`
+  # network alias so existing WP/Laravel cache configs (which use host `redis`)
+  # keep working unchanged; new configs can use `valkey`.
+  valkey:
+    image: docker.io/valkey/valkey:8-alpine
+    container_name: valkey
+    command: ["valkey-server", "/etc/valkey/valkey.conf", "--maxmemory", "${VALKEY_MAXMEMORY:-64mb}"]
+    environment:
+      VALKEY_MAXMEMORY: ${VALKEY_MAXMEMORY:-64mb}
+    volumes:
+      - ./valkey/valkey.conf:/etc/valkey/valkey.conf:ro
+    networks:
+      backend:
+        aliases:
+          - redis
+    restart: unless-stopped
+
+volumes:
+  php-socket:
+
+networks:
+  web:
+  backend:
+    internal: true

@@ -1,0 +1,73 @@
+# PHP-FPM container — ubuntu 24.04 + PHP 8.5 + extensions.
+#
+# PHP 8.5 comes from packages.sury.org (the canonical source going forward;
+# the ondrej PPA on Launchpad no longer carries 8.5 for noble).
+#
+# A SINGLE shared PHP-FPM container serves every site (Laravel + WordPress).
+# Add a second container ONLY if a site truly needs a different PHP version.
+
+FROM docker.io/ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg \
+    && curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/php.gpg \
+    && printf '%s\n' \
+         'deb [signed-by=/usr/share/keyrings/php.gpg] https://packages.sury.org/php/ noble main' \
+         > /etc/apt/sources.list.d/php.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        php8.5-fpm \
+        php8.5-cli \
+        php8.5-mysql \
+        php8.5-mbstring \
+        php8.5-zip \
+        php8.5-intl \
+        php8.5-imagick \
+        php8.5-gd \
+        php8.5-curl \
+        php8.5-xml \
+        # phpredis talks to Valkey (drop-in Redis replacement) over RESP.
+        php8.5-redis \
+        php8.5-sqlite3 \
+        ffmpeg \
+        imagemagick \
+        ghostscript \
+        poppler-utils \
+        zip \
+        unzip \
+        sqlite3 \
+        # Editing convenience: site files are bind-mounted at /var/www, and a
+        # shell in this container now has an editor to hand (pod-login).
+        nano \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Composer: latest via the official installer (noble's apt composer predates
+# PHP 8.5 and prints deprecation notices).
+RUN curl -fsSL https://getcomposer.org/installer -o /tmp/composer-setup.php \
+    && php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer --quiet \
+    && rm -f /tmp/composer-setup.php \
+    && composer --version 2>/dev/null
+
+# WP-CLI is no longer packaged for Ubuntu — install the official phar.
+RUN curl -fsSL https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar -o /usr/local/bin/wp \
+    && chmod +x /usr/local/bin/wp \
+    && wp --allow-root --version
+
+# Versioned overrides (also bind-mounted read-only from compose).
+COPY 10-opcache.ini      /etc/php/8.5/fpm/conf.d/10-opcache.ini
+COPY 20-fpm-security.ini /etc/php/8.5/fpm/conf.d/20-fpm-security.ini
+COPY fpm-www.conf        /etc/php/8.5/fpm/pool.d/www.conf
+
+# Site files live on the host under /var/www and are bind-mounted in.
+WORKDIR /var/www
+
+EXPOSE 9000
+
+# Group-write umask for the shared web-write model (files 664, dirs 775).
+# There is no FPM pool `umask` directive, so set it on the master before exec;
+# pool workers fork from the master and inherit it.
+CMD ["sh", "-c", "umask 0002 && exec php-fpm8.5 -F"]

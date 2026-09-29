@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# =============================================================================
+# pod-logs — print or follow a stack container's logs.
+#
+#   pod-logs                    # last 200 lines of php-fpm, then exit
+#   pod-logs nginx -f           # follow the nginx container
+#   pod-logs mariadb -n 50      # last 50 lines of the database
+#
+# Defaults to the main PHP box (php-fpm); pass another container name to reach
+# nginx, mariadb, valkey, node or open-webui.
+# =============================================================================
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+REPO_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+source "$REPO_DIR/scripts/lib-containers.sh"
+
+usage() {
+  cat <<EOF
+usage: $(basename "$0") [container] [-f] [-n N]
+
+  container       one of: ${ALL_CONTAINERS[*]}
+                  (default: $CONTAINER_PHP_FPM)
+  -f, --follow    keep streaming new log lines (Ctrl-C to stop)
+  -n, --tail N    number of lines to show first (default: 200)
+  -h, --help      show this help
+EOF
+}
+
+for arg in "$@"; do
+  case "$arg" in -h|--help) usage; exit 0 ;; esac
+done
+
+# Rootful podman -> root (auto-sudo like the other admin scripts).
+if [ "$(id -u)" -ne 0 ]; then
+  exec sudo "$SELF" "$@"
+fi
+
+CONTAINER=""
+FOLLOW=0
+TAIL=200
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -f|--follow) FOLLOW=1; shift ;;
+    -n|--tail) TAIL="${2:?$1 needs a number}"; shift 2 ;;
+    --) shift; break ;;
+    -*) echo "pod-logs: unknown option '$1'" >&2; usage >&2; exit 2 ;;
+    *) CONTAINER="$1"; shift ;;
+  esac
+done
+CONTAINER="${CONTAINER:-$CONTAINER_PHP_FPM}"
+
+if ! podman container exists "$CONTAINER" 2>/dev/null; then
+  echo "pod-logs: no such container '$CONTAINER'." >&2
+  echo "Stack containers: ${ALL_CONTAINERS[*]}" >&2
+  exit 1
+fi
+
+OPTS=(--tail "$TAIL")
+[ "$FOLLOW" = 1 ] && OPTS+=(-f)
+
+exec podman logs "${OPTS[@]}" "$CONTAINER"

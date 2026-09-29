@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# =============================================================================
+# pod-exec — run a CLI command inside the right container, transparently from
+# the host shell. This single script serves every command name it is symlinked
+# as (see scripts/install-cli.sh). The command -> container mapping lives in
+# scripts/lib-containers.sh (the single source of truth).
+#
+# Usage from the host (auto-sudo — these need root, run them as the admin user):
+#   php -v
+#   composer install
+#   artisan migrate                 # runs `php artisan` in the current dir
+#   wp core version
+#   ffmpeg -i in.mp4 out.avi
+#   convert a.png -resize 800x b.jpg
+#   gs -sDEVICE=pdfwrite -o out.pdf in.ps
+#   pdftoppm -png -r 150 doc.pdf page
+#   mariadb -e 'SHOW DATABASES;'
+#   mysqldump pressabl > /var/databases/pressabl.sql
+#   valkey-cli ping                 # `redis-cli` works too (compat alias)
+#   npm install
+#   nginx -t
+#   nginx-reload
+#   nginx-restart
+#   php-reload
+#
+# Invoked directly as `pod-exec` it runs an arbitrary command in any container:
+#   pod-exec php-fpm php -m
+#
+# Note: the host cwd is mirrored into the container when you are under the host
+# web root (~/www, mapped to /var/www inside the container). PHP tooling runs as
+# www-data so file ownership stays consistent with what nginx/php-fpm expect.
+# =============================================================================
+set -euo pipefail
+
+NAME="$(basename "$0")"
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+REPO_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+
+# Internal: carry the invoked name across the sudo re-exec below (sudo runs the
+# real script path, so basename would otherwise be "pod-exec").
+if [ "${1:-}" = "--reexec-as" ]; then
+  NAME="$2"; shift 2
+fi
+
+# Everything pod-exec does needs root (podman exec/restart). Self-sudo like the
+# other host helpers so `php`/`wp`/… work exactly as typed — plain `sudo php`
+# wouldn't find these wrappers anyway, since sudo resets PATH.
+if [ "$(id -u)" -ne 0 ]; then
+  exec sudo bash "$SELF" --reexec-as "$NAME" "$@"
+fi
+
+source "$REPO_DIR/scripts/lib-containers.sh"
+source "$REPO_DIR/scripts/lib-paths.sh"
+[ -f "$REPO_DIR/.env" ] && set -a && . "$REPO_DIR/.env" && set +a
+WWW_ROOT="$(resolve_www_root)"
+
+# ---- command -> container (resolved from lib-containers.sh) ----
+if [ "$NAME" = "pod-exec" ]; then
+  CONTAINER="${1:?usage: pod-exec <container> <command> [args...]}"
+  shift
+  BIN="${1:?usage: pod-exec <container> <command> [args...]}"
+  shift
+else
+  CONTAINER="${CLI_CONTAINER[$NAME]:-}"
+  if [ -z "$CONTAINER" ]; then
+    echo "pod-exec: '$NAME' is not a known command." >&2
+    echo "Known: $(printf '%s ' "${!CLI_CONTAINER[@]}" | sort)" >&2
+    exit 127
+  fi
+  BIN="$NAME"
+  case "$NAME" in
+    artisan)       BIN="php" ;;
+    redis-cli)     BIN="valkey-cli" ;;   # drop-in compat alias
+    mysql)         BIN="mariadb" ;;      # mariadb:11 ships only the mariadb client
+    mysqldump)     BIN="mariadb-dump" ;; # ... and mariadb-dump, not mysqldump
+    php-reload)    BIN="sh"; set -- -c 'php-fpm8.5 -t && kill -USR2 1' ;;
+    nginx-reload)  BIN="sh"; set -- -c 'nginx -t && nginx -s reload' ;;
+    nginx-test)    BIN="nginx"; set -- -t ;;
+  esac
+fi
+
+# ---- `nginx-restart` is a host-level container restart, not an in-container
+# ---- exec. Run it before the podman exec below.
+if [ "$NAME" = "nginx-restart" ]; then
+  exec podman restart "$CONTAINER_NGINX"
+fi
+
+# ---- mirror the host cwd into the container when under the web root ----
+# Site files live at $WWW_ROOT (~/www) on the host but /var/www in the
+# containers, so translate the prefix before passing -w.
+EXEC_OPTS=()
+if [[ "$PWD" == "$WWW_ROOT" || "$PWD" == "$WWW_ROOT"/* ]]; then
+  EXEC_OPTS+=(-w "${CONTAINER_WWW}${PWD#"$WWW_ROOT"}")
+fi
+
+# ---- TTY handling (interactive terminal vs piped/scripted use) ----
+if [[ -t 0 ]]; then
+  EXEC_OPTS+=(-it)
+else
+  EXEC_OPTS+=(-i)
+fi
+
+# ---- PHP tooling runs as www-data so file ownership stays consistent ----
+# (php-reload must run as root — it signals the FPM master, PID 1.)
+if [ "$CONTAINER" = "$CONTAINER_PHP_FPM" ] && [ "$NAME" != "php-reload" ]; then
+  EXEC_OPTS+=(-u www-data)
+fi
+
+# ---- DB credentials pulled from the repo .env when present ----
+if [ "$CONTAINER" = "$CONTAINER_MARIADB" ]; then
+  [ -f "$REPO_DIR/.env" ] && set -a && . "$REPO_DIR/.env" && set +a
+  case "$NAME" in
+    mariadb|mysql)
+      if [[ -n "${MARIADB_ROOT_PASSWORD:-}" ]]; then
+        set -- -uroot -p"$MARIADB_ROOT_PASSWORD" "$@"
+      else
+        set -- -uroot "$@"
+      fi ;;
+    mysqldump|mariadb-dump)
+      if [[ -n "${MARIADB_ROOT_PASSWORD:-}" ]]; then
+        set -- -uroot -p"$MARIADB_ROOT_PASSWORD" --single-transaction "$@"
+      else
+        set -- -uroot --single-transaction "$@"
+      fi ;;
+  esac
+fi
+
+# ---- `artisan` is `php artisan` in the current directory ----
+if [ "$NAME" = "artisan" ]; then
+  set -- artisan "$@"
+fi
+
+exec podman exec "${EXEC_OPTS[@]}" "$CONTAINER" "$BIN" "$@"

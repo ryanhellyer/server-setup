@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# =============================================================================
+# cert-status — show the TLS certificates certbot manages, and their expiry.
+#
+#   cert-status
+#
+# Reads the certificates under env/letsencrypt/live/ directly with openssl, so
+# it works offline (no certbot, no container, no network). Exits non-zero if a
+# certificate is expired or expires within 7 days, so it can back a cron alert.
+# =============================================================================
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+REPO_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+LETSENCRYPT_DIR="$REPO_DIR/env/letsencrypt"
+
+case "${1:-}" in
+  -h|--help)
+    cat <<EOF
+usage: $(basename "$0")
+
+List the certificates in env/letsencrypt/live with their domains and expiry.
+EOF
+    exit 0 ;;
+esac
+
+[ -d "$LETSENCRYPT_DIR/live" ] || { echo "cert-status: no certificates at $LETSENCRYPT_DIR/live"; exit 1; }
+
+now="$(date +%s)"
+warning=0
+found=0
+printf '%-14s %-12s %-6s %s\n' CERTIFICATE EXPIRES DAYS DOMAINS
+for dir in "$LETSENCRYPT_DIR"/live/*/; do
+  [ -f "$dir/fullchain.pem" ] || continue
+  [ -r "$dir/fullchain.pem" ] || { echo "cert-status: cannot read $dir/fullchain.pem (try: sudo $0)" >&2; exit 1; }
+  found=1
+  name="$(basename "$dir")"
+  end="$(openssl x509 -in "$dir/fullchain.pem" -noout -enddate | cut -d= -f2)"
+  end_epoch="$(date -d "$end" +%s)"
+  days=$(( (end_epoch - now) / 86400 ))
+  domains="$(openssl x509 -in "$dir/fullchain.pem" -noout -ext subjectAltName 2>/dev/null \
+    | sed -n '2,$p' | tr -d ' \n' | sed 's/DNS:/ /g; s/^ //')"
+  [ -n "$domains" ] || domains="$(openssl x509 -in "$dir/fullchain.pem" -noout -subject \
+    | sed -nE 's/.*CN ?= ?([^,/]+).*/\1/p')"
+  printf '%-14s %-12s %-6s %s\n' "$name" "$(date -d "$end" +%Y-%m-%d)" "$days" "$domains"
+  [ "$days" -lt 7 ] && warning=1
+done
+
+[ "$found" = 1 ] || { echo "cert-status: no certificates found under $LETSENCRYPT_DIR/live"; exit 1; }
+
+echo
+if [ "$warning" = 1 ]; then
+  echo "!! At least one certificate is expired or expires within 7 days."
+  exit 1
+fi
+echo "All certificates valid for 7+ days."

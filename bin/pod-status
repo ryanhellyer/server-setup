@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# =============================================================================
+# pod-status — a compact, fixed-order status of the whole stack.
+#
+#   pod-status
+#
+# Lists each stack container with its state, health (if the image defines a
+# healthcheck) and start time. Exits non-zero if any container is not running,
+# so it doubles as a quick health probe (e.g. for monitoring).
+# =============================================================================
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+REPO_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+source "$REPO_DIR/scripts/lib-containers.sh"
+
+case "${1:-}" in
+  -h|--help)
+    cat <<EOF
+usage: $(basename "$0")
+
+Show the state/health of: ${ALL_CONTAINERS[*]}
+EOF
+    exit 0 ;;
+esac
+
+if [ "$(id -u)" -ne 0 ]; then
+  exec sudo "$SELF" "$@"
+fi
+
+running=0
+total=0
+printf '%-12s %-10s %-10s %s\n' CONTAINER STATE HEALTH STARTED
+for c in "${ALL_CONTAINERS[@]}"; do
+  total=$((total + 1))
+  if ! podman container exists "$c" 2>/dev/null; then
+    printf '%-12s %-10s %-10s %s\n' "$c" absent - -
+    continue
+  fi
+  state="$(podman inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo unknown)"
+  health="$(podman inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}' "$c" 2>/dev/null || echo -)"
+  started="$(podman inspect -f '{{.State.StartedAt}}' "$c" 2>/dev/null || echo -)"
+  [ "$state" = "running" ] && running=$((running + 1))
+  printf '%-12s %-10s %-10s %s\n' "$c" "$state" "$health" "$started"
+done
+
+echo
+if [ "$running" -eq "$total" ]; then
+  echo "All $total containers running."
+  exit 0
+fi
+echo "$running/$total containers running."
+exit 1

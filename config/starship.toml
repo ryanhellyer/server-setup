@@ -1,0 +1,101 @@
+# Starship prompt for the server host shell.
+# Installed by scripts/host-setup.sh — this repo is the source of truth.
+# Edit here, then re-apply with: sudo bash scripts/host-setup.sh
+#
+# Two-line prompt:
+#   hostname directory git-branch git-status
+#   ❯
+# The status module only appears when the last command failed.
+
+format = """\
+$hostname$directory$git_branch$git_status\
+$line_break\
+$character"""
+
+add_newline = false
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+
+[hostname]
+format = "[$hostname]($style) "
+style = "bold blue"
+
+[directory]
+truncation_length = 3
+truncate_to_repo = true
+read_only = " 🔒"
+
+[git_branch]
+format = "[$branch]($style) "
+style = "bold purple"
+
+[git_status]
+format = "([$all_status$ahead_behind]($style)) "
+style = "bold cyan"
+
+[status]
+disabled = false
+format = "[$symbol$status]($style) "
+symbol = "✘ "
+style = "bold red"
+
+[cmd_duration]
+min_time = 2000
+format = "[$duration]($style) "
+style = "yellow"
+
+[jobs]
+format = "[$symbol$number]($style) "
+symbol = "⚙ "
+style = "bold blue"
+
+[username]
+disabled = true
+
+[container]
+symbol = "⬢ "
+style = "bold red"
+
+[time]
+disabled = true
+
+[package]
+disabled = true
+
+[aws]
+disabled = true
+
+[azure]
+disabled = true
+
+[gcloud]
+disabled = true
+
+[docker_context]
+disabled = true
+
+[kubernetes]
+disabled = true
+
+[python]
+disabled = true
+
+[nodejs]
+disabled = true
+
+[rust]
+disabled = true
+
+[golang]
+disabled = true
+
+[java]
+disabled = true
+
+[php]
+disabled = true
+
+[ruby]
+disabled = true

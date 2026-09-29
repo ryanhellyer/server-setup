@@ -1,0 +1,12 @@
+[mysqld]
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+# Sized for the host RAM (env-driven via MARIADB_BUFFER_POOL / MARIADB_LOG_SIZE
+# in .env; rendered by scripts/render-config.sh).
+innodb_buffer_pool_size = __MARIADB_BUFFER_POOL__
+innodb_log_file_size = __MARIADB_LOG_SIZE__
+
+# Security defaults.
+skip_name_resolve = ON
+local_infile = OFF

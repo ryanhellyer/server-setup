@@ -1,0 +1,75 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name _;
+
+    # Let's Encrypt verification path
+    location ~ /.well-known/acme-challenge/ {
+        allow all;
+        root /var/www/acme;
+        try_files $uri =404;
+    }
+
+    # Redirect all HTTP traffic to HTTPS
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+
+    server_name pressabl12.hellyer.kiwi;
+    root /var/www/pressabl12.hellyer.kiwi/public;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name pressabl12.hellyer.kiwi;
+
+    # SSL certificates
+#    ssl_certificate /etc/letsencrypt/live/pressabl12.hellyer.kiwi/fullchain.pem
+#    ssl_certificate_key /etc/letsencrypt/live/pressabl12.hellyer.kiwi/privkey.pem;
+
+#    # Log files
+#    access_log /var/www/pressabl12.hellyer.kiwi/logs/access.log;
+#    error_log /var/www/pressabl12.hellyer.kiwi/logs/error.log;
+#
+#    # Document root and index
+#    root /var/www/pressabl12.hellyer.kiwi/public/;
+#    index index.php index.html;
+#
+#    # Custom 404 error page
+#    error_page 404 /404.jpg;
+#
+#    # Handle normal page requests
+#    location / {
+#        try_files $uri $uri/ /index.php?$args;
+#    }
+
+    # PHP handler
+#    location ~ \.php$ {
+#        try_files $uri =404;
+#        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+#        fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+#        fastcgi_index index.php;
+#        
+#        # Cache configuration
+#        include fastcgi_params;
+#        fastcgi_cache_bypass $no_cache;
+#        fastcgi_no_cache $no_cache;
+#        fastcgi_cache PRESSABL;
+#        fastcgi_cache_valid 200 1m;
+#        
+#        # Serve stale pages on errors
+#        fastcgi_cache_use_stale error timeout invalid_header http_500;
+#        
+#        # Allow concurrent cache requests
+#        fastcgi_cache_lock off;
+#    }
+}

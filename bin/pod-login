@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# =============================================================================
+# pod-login — open an interactive shell inside a running stack container.
+#
+# A short, memorable alternative to `sudo podman exec -it <container> bash`.
+# Defaults to the main PHP box (php-fpm); pass another container name to reach
+# nginx, mariadb, valkey, node or open-webui.
+#
+#   pod-login                      # root shell in php-fpm
+#   pod-login mariadb              # root shell in the mariadb container
+#   pod-login -u www-data php-fpm  # login as www-data (keeps file ownership)
+#   pod-login --list               # list the running stack containers
+#
+# The host cwd is mirrored into the container when you are under the web root
+# (~/www -> /var/www), so running `pod-login` from a site directory drops you
+# straight into that site inside the container (same behaviour as pod-exec).
+# =============================================================================
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+REPO_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+source "$REPO_DIR/scripts/lib-containers.sh"
+source "$REPO_DIR/scripts/lib-paths.sh"
+
+usage() {
+  cat <<EOF
+usage: $(basename "$0") [container] [-u user]
+
+  container     one of: ${ALL_CONTAINERS[*]}
+                (default: $CONTAINER_PHP_FPM)
+  -u, --user U  login as this user inside the container (default: root)
+  -l, --list    list the running stack containers and exit
+  -h, --help    show this help
+EOF
+}
+
+# Help never needs root, so answer it before the sudo re-exec.
+for arg in "$@"; do
+  case "$arg" in -h|--help) usage; exit 0 ;; esac
+done
+
+# The stack runs rootful podman, so a shell in a container needs root. Re-exec
+# under sudo like the other admin scripts (the admin user has NOPASSWD). Don't
+# pass -E: sudo ignores it here, and .env is (re)read below as root anyway.
+if [ "$(id -u)" -ne 0 ]; then
+  exec sudo "$SELF" "$@"
+fi
+
+# Now root: load .env (root-only) and resolve the host web root for cwd mirroring.
+[ -f "$REPO_DIR/.env" ] && set -a && . "$REPO_DIR/.env" && set +a
+WWW_ROOT="$(resolve_www_root)"
+
+CONTAINER=""
+LOGIN_USER="root"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -u|--user) LOGIN_USER="${2:?$1 needs a username}"; shift 2 ;;
+    -l|--list) exec podman ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' ;;
+    --) shift; break ;;
+    -*) echo "pod-login: unknown option '$1'" >&2; usage >&2; exit 2 ;;
+    *) CONTAINER="$1"; shift ;;
+  esac
+done
+CONTAINER="${CONTAINER:-$CONTAINER_PHP_FPM}"
+
+if ! podman container exists "$CONTAINER" 2>/dev/null; then
+  echo "pod-login: no such container '$CONTAINER'." >&2
+  echo "Stack containers: ${ALL_CONTAINERS[*]}" >&2
+  exit 1
+fi
+if [ "$(podman inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null || true)" != "true" ]; then
+  echo "pod-login: '$CONTAINER' is not running (try: sudo podman start $CONTAINER)." >&2
+  exit 1
+fi
+
+# Prefer bash, fall back to sh (the node/mariadb images ship either).
+SHELL_BIN="$(podman exec "$CONTAINER" sh -c 'command -v bash 2>/dev/null || command -v sh 2>/dev/null' 2>/dev/null | head -n1 || true)"
+SHELL_BIN="${SHELL_BIN:-/bin/sh}"
+
+# Mirror the host cwd into the container when under the web root.
+EXEC_OPTS=()
+if [[ "$PWD" == "$WWW_ROOT" || "$PWD" == "$WWW_ROOT"/* ]]; then
+  EXEC_OPTS+=(-w "${CONTAINER_WWW}${PWD#"$WWW_ROOT"}")
+fi
+
+# Interactive terminal when attached to one; plain -i for piped/scripted use.
+if [[ -t 0 && -t 1 ]]; then
+  EXEC_OPTS+=(-it)
+else
+  EXEC_OPTS+=(-i)
+fi
+
+exec podman exec "${EXEC_OPTS[@]}" -u "$LOGIN_USER" "$CONTAINER" "$SHELL_BIN"

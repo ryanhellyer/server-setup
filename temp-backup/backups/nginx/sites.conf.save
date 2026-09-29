@@ -1,0 +1,448 @@
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name pressabl12.hellyer.kiwi;
+
+    # SSL certificates
+    ssl_certificate /etc/letsencrypt/live/pressabl12.hellyer.kiwi/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/pressabl12.hellyer.kiwi/privkey.pem;
+
+    # Log files
+    access_log /var/www/pressabl12.hellyer.kiwi/logs/access.log;
+    error_log /var/www/pressabl12.hellyer.kiwi/logs/error.log;
+
+    # Document root and index
+    root /var/www/pressabl12.hellyer.kiwi/public/;
+    index index.php index.html;
+
+#    # Custom 404 error page
+    error_page 404 /404.jpg;
+#
+#    # Handle normal page requests
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    # PHP handler
+#    location ~ \.php$ {
+#        try_files $uri =404;
+#        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+#        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+#        fastcgi_index index.php;
+#        
+#        # Cache configuration
+#        include fastcgi_params;
+#        fastcgi_cache_bypass $no_cache;
+#        fastcgi_no_cache $no_cache;
+#        fastcgi_cache PRESSABL;
+#        fastcgi_cache_valid 200 1m;
+#        
+#        # Serve stale pages on errors
+#        fastcgi_cache_use_stale error timeout invalid_header http_500;
+#        
+#        # Allow concurrent cache requests
+#        fastcgi_cache_lock off;
+#    }
+
+    location ~ \.php$ {
+        try_files $uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+        fastcgi_index index.php;
+        
+        # Include standard FastCGI parameters
+        include fastcgi_params;
+        
+        # Add these important FastCGI parameters
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $fastcgi_path_info;
+    }
+}
+
+
+
+
+
+
+#NETCUP ... sudo certbot certonly --webroot -w /var/www/acme -d pressabl12.hellyer.kiwi -d stuff.hellyer.kiwi -d ice.hellyer.kiwi -d de.hellyer.kiwi -d undiecar.hellyer.kiwi -d random.hellyer.kiwi -d berlin-advice.hellyer.kiwi -d book.hellyer.kiwi -d external-posts.hellyer.kiwi -d facebook.hellyer.kiwi -d forum.hellyer.kiwi -d geek.hellyer.kiwi -d instagram.hellyer.kiwi -d invoices.hellyer.kiwi -d nb.hellyer.kiwi -d ryan.hellyer.kiwi -d slapshot.hellyer.kiwi -d tweets.hellyer.kiwi -d wordpress.hellyer.kiwi -d spamannihilator.com -d hellyer.kiwi -d dunedinicehockey.hellyer.kiwi;
+# sudo certbot certonly -d pressabl10.hellyer.kiwi -d de.hellyer.kiwi -d undiecar.hellyer.kiwi -d random.hellyer.kiwi -d undiecar.com -d berlin-advice.hellyer.kiwi -d book.hellyer.kiwi -d external-posts.hellyer.kiwi -d facebook.hellyer.kiwi -d forum.hellyer.kiwi -d geek.hellyer.kiwi -d ice.hellyer.kiwi -d instagram.hellyer.kiwi -d invoices.hellyer.kiwi -d nb.hellyer.kiwi -d ryan.hellyer.kiwi -d secure.hellyer.kiwi -d slapshot.hellyer.kiwi -d tweets.hellyer.kiwi -d wordpress.hellyer.kiwi -d spamannihilator.com -d hellyer.kiwi -d dunedinicehockey.hellyer.kiwi -d psychedelicsocietyberlin.org -d job-ready-cvs.hellyer.kiwi -d german.hellyer.kiwi -d stuff.hellyer.kiwi -d events.hellyer.kiwi -d comicjet.com -d carly.hellyer.kiwi;
+
+# bash certbot.sh - for updating certificates, just make sure to add each new domain to it. - maybe post this as a blog post
+
+##
+ # Handle WordPress requests.
+ #
+server {
+	listen 443 ssl http2;
+	listen [::]:443 ssl http2;
+
+	server_name pressabl10.hellyer.kiwi de.hellyer.kiwi undiecar.hellyer.kiwi random.hellyer.kiwi undiecar.com berlin-advice.hellyer.kiwi book.hellyer.kiwi external-posts.hellyer.kiwi facebook.hellyer.kiwi forum.hellyer.kiwi geek.hellyer.kiwi ice.hellyer.kiwi instagram.hellyer.kiwi invoices.hellyer.kiwi nb.hellyer.kiwi offline-demo.hellyer.kiwi ryan.hellyer.kiwi slapshot.hellyer.kiwi tweets.hellyer.kiwi wordpress.hellyer.kiwi spamannihilator.com hellyer.kiwi dunedinicehockey.hellyer.kiwi psychedelicsocietyberlin.org carly.hellyer.kiwi;
+
+	ssl_certificate /etc/letsencrypt/live/pressabl12.hellyer.kiwi/fullchain.pem;
+	ssl_certificate_key /etc/letsencrypt/live/pressabl12.hellyer.kiwi/privkey.pem;
+
+	access_log /var/www/pressabl/logs/access.log;
+	error_log /var/www/pressabl/logs/error.log;
+	root /var/www/pressabl/public_html/;
+	index index.php;
+
+        # Set 404 error page to your image
+        error_page 404 /404.jpg;
+
+#test - temporary
+location = /sitestashertest {
+    try_files /sitestashertest/index.html =404;
+}
+
+
+	# Tries to get file directly from relevant folder ($blogid set in the Nginx map), otherwise grabs file via PHP.
+	location ~ ^/files/(.*)$ {
+		try_files /wp-content/blogs.dir/$blogid/$uri /wp-includes/ms-files.php?file=$1 ;
+		access_log off;
+		log_not_found off;
+		expires max;
+	}
+
+	# Block all traffic going directly to the blogs.dir directory.
+	location ~* /wp-content/blogs.dir/ {
+		return 403;
+	}
+
+        # Database management tool password protection.
+	location = /adminer.php {
+		auth_basic "Administrator Login";
+		auth_basic_user_file /var/www/pressabl/.htpasswd;
+		try_files $uri =404;
+		include fastcgi_params;
+		fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+		fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+	}
+
+	##
+	# Handle access to .git directory.
+	# Sends it to WordPress to ensure relevant 404 pages are served.
+	#
+	location ~ /\.git {
+		rewrite ^ /index.php?$args;
+	}
+#	location ~ /\.git {
+#		try_files $uri $uri/ /index.php?$args;
+#	}
+
+	##
+	# Load WordPress pages.
+	#
+	location / {
+		try_files $uri $uri/ /index.php?$args;
+	}
+
+	##
+	# Load PHP files.
+	#
+	location ~ \.php$ {
+		try_files $uri =404;
+		fastcgi_split_path_info ^(.+\.php)(/.+)$;
+		fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+		fastcgi_index index.php;
+
+		# Cache config.
+		include fastcgi_params;
+		fastcgi_cache_bypass $no_cache;
+		fastcgi_no_cache $no_cache;
+		fastcgi_cache_bypass $no_cache;
+		fastcgi_no_cache $no_cache; 
+		fastcgi_cache PRESSABL;
+		fastcgi_cache_valid 200 1m;
+
+		# Serve stale pages.
+		fastcgi_cache_use_stale error timeout invalid_header http_500;
+
+		# Allow concurrent cache requests.
+		fastcgi_cache_lock off;
+	}
+
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+
+    server_name secure.hellyer.kiwi;
+#    ssl_certificate /etc/letsencrypt/live/pressabl10.hellyer.kiwi-0005/fullchain.pem;
+#    ssl_certificate_key /etc/letsencrypt/live/pressabl10.hellyer.kiwi-0005/privkey.pem;
+
+    # Add authentication for the entire server block - password is "<REDACTED>"
+    auth_basic "Restricted Access";
+    auth_basic_user_file /var/www/secure-new/.htpasswd;
+
+    root /var/www/secure-new/public;
+#    root /var/www/secure/public_html;
+    index index.html index.php;
+
+    location / {
+        try_files $uri $uri/ @fallback;
+    }
+
+
+    # If nothing is found, then default to the Pressabl WordPress install
+    location @fallback {
+        root /var/www/pressabl/public_html;
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    location ~ \.php$ {
+#        root /var/www/secure/public_html;
+        root /var/www/secure-new/public;
+
+        try_files $uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+        fastcgi_index index.php;
+
+        # Cache config.
+        include fastcgi_params;
+        fastcgi_cache_bypass $no_cache;
+        fastcgi_no_cache $no_cache;
+        fastcgi_cache PRESSABL;
+        fastcgi_cache_valid 200 1m;
+
+        # Serve stale pages.
+        fastcgi_cache_use_stale error timeout invalid_header http_500;
+
+        # Allow concurrent cache requests.
+        fastcgi_cache_lock off;
+    }
+
+}
+
+##
+# stuff.hellyer.kiwi
+#
+server {
+        listen 443 ssl http2;
+        listen [::]:443 ssl http2;
+
+        server_name stuff.hellyer.kiwi;
+
+        ssl_certificate /etc/letsencrypt/live/pressabl12.hellyer.kiwi/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/pressabl12.hellyer.kiwi/privkey.pem;
+
+        access_log /var/www/stuff.hellyer.kiwi/logs/access.log;
+        error_log /var/www/stuff.hellyer.kiwi/logs/error.log;
+        root /var/www/stuff.hellyer.kiwi/public_html/;
+        index index.html index.php;
+
+	# Set 404 error page to your image
+	error_page 404 /404.jpg;
+
+	location / {
+		autoindex on; # displays contents of files in each folder.
+		try_files $uri $uri/ =404;
+	}
+
+        location /medical-records {
+                auth_basic "Restricted Access";
+                auth_basic_user_file /var/www/stuff.hellyer.kiwi/.htpasswd;
+        }
+
+        location /private {
+                auth_basic "Restricted Access";
+                auth_basic_user_file /var/www/stuff.hellyer.kiwi/.htpasswd;
+        }
+}
+
+##
+# german.hellyer.kiwi
+#
+server {
+        listen 443 ssl http2;
+        listen [::]:443 ssl http2;
+
+        server_name german.hellyer.kiwi;
+
+#        ssl_certificate /etc/letsencrypt/live/pressabl10.hellyer.kiwi-0005/fullchain.pem;
+#        ssl_certificate_key /etc/letsencrypt/live/pressabl10.hellyer.kiwi-0005/privkey.pem;
+
+        access_log /var/www/german.hellyer.kiwi/logs/access.log;
+        error_log /var/www/german.hellyer.kiwi/logs/error.log;
+        root /var/www/german.hellyer.kiwi/public_html/;
+        index index.html;
+
+        # Set 404 error page to your image
+       error_page 404 /404.jpg;
+
+        location / {
+                try_files $uri $uri/ =404;
+        }
+
+       ##
+        # Load PHP files.
+        #
+        location ~ \.php$ {
+                try_files $uri =404;
+                fastcgi_split_path_info ^(.+\.php)(/.+)$;
+                fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+                fastcgi_index index.php;
+
+                # Cache config.
+                include fastcgi_params;
+                fastcgi_cache_bypass $no_cache;
+                fastcgi_no_cache $no_cache;
+                fastcgi_cache_bypass $no_cache;
+                fastcgi_no_cache $no_cache;
+                fastcgi_cache PRESSABL;
+                fastcgi_cache_valid 200 1m;
+
+                # Serve stale pages.
+                fastcgi_cache_use_stale error timeout invalid_header http_500;
+
+                # Allow concurrent cache requests.
+                fastcgi_cache_lock off;
+        }
+
+}
+
+##
+# events.hellyer.kiwi
+#
+server {
+        listen 443 ssl http2;
+        listen [::]:443 ssl http2;
+
+        server_name events.hellyer.kiwi;
+
+#        ssl_certificate /etc/letsencrypt/live/pressabl10.hellyer.kiwi-0005/fullchain.pem;
+#        ssl_certificate_key /etc/letsencrypt/live/pressabl10.hellyer.kiwi-0005/privkey.pem;
+
+        access_log /var/www/events.hellyer.kiwi/logs/access.log;
+        error_log /var/www/events.hellyer.kiwi/logs/error.log;
+        root /var/www/events.hellyer.kiwi/public/;
+        index index.html;
+
+        # Set 404 error page to your image
+       error_page 404 /404.jpg;
+
+
+        location / {
+                try_files $uri $uri/ /index.php?$args;
+        }
+
+	location /admin/ {
+	    auth_basic "Restricted Area";
+	    auth_basic_user_file /var/www/events.hellyer.kiwi/.htpasswd; # events new7
+		try_files $uri $uri/ /index.php?$args;
+	}
+
+
+       ##
+        # Load PHP files.
+        #
+        location ~ \.php$ {
+                try_files $uri =404;
+                fastcgi_split_path_info ^(.+\.php)(/.+)$;
+                fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+                fastcgi_index index.php;
+
+                # Cache config.
+                include fastcgi_params;
+                fastcgi_cache_bypass $no_cache;
+                fastcgi_no_cache $no_cache;
+                fastcgi_cache_bypass $no_cache;
+                fastcgi_no_cache $no_cache;
+                fastcgi_cache PRESSABL;
+                fastcgi_cache_valid 200 1m;
+
+                # Serve stale pages.
+                fastcgi_cache_use_stale error timeout invalid_header http_500;
+
+                # Allow concurrent cache requests.
+                fastcgi_cache_lock off;
+        }
+}
+
+##
+# comicjet.com
+#
+server {
+        listen 443 ssl http2;
+        listen [::]:443 ssl http2;
+
+        server_name comicjet.com;
+
+#        ssl_certificate /etc/letsencrypt/live/pressabl10.hellyer.kiwi-0005/fullchain.pem;
+#        ssl_certificate_key /etc/letsencrypt/live/pressabl10.hellyer.kiwi-0005/privkey.pem;
+
+        access_log /var/www/comicjet.com/logs/access.log;
+        error_log /var/www/comicjet.com/logs/error.log;
+        root /var/www/comicjet.com/public_html/;
+        index index.html;
+
+        # Set 404 error page to your image
+        error_page 404 /404.jpg;
+
+	# Serve static files normally. This block assumes that all files (that contain an extension) are static files.
+	location ~* \..+$ {
+		try_files $uri =404;
+	}
+
+	# All other requests (without an extension) load index.html.
+        location / {
+		try_files /index.html =404;
+        }
+
+}
+
+##
+# historic-wordpress.hellyer.kiwi.
+#
+server {
+        listen 443 ssl http2;
+        listen [::]:443 ssl http2;
+
+        server_name historic-wordpress.hellyer.kiwi;
+
+#        ssl_certificate /etc/letsencrypt/live/pressabl10.hellyer.kiwi-0005/fullchain.pem;
+#        ssl_certificate_key /etc/letsencrypt/live/pressabl10.hellyer.kiwi-0005/privkey.pem;
+
+        access_log /var/www/historic-wordpress.hellyer.kiwi/logs/access.log;
+        error_log /var/www/historic-wordpress.hellyer.kiwi/logs/error.log;
+        root /var/www/historic-wordpress.hellyer.kiwi/public_html/;
+        index index.html;
+
+        # Set 404 error page to your image
+        error_page 404 /404.jpg;
+
+        # Serve static files normally. This block assumes that all files (that contain an extension) are static files.
+        location ~* \..+$ {
+                autoindex on; # displays contents of files in each folder.
+		try_files $uri =404;
+        }
+
+        # All other requests (without an extension) load index.html.
+        location / {
+                try_files /index.html =404;
+        }
+
+}
+
+##
+# Redirect all http requests to http.
+#
+server {
+    listen 80;
+    listen [::]:80;
+    server_name _;
+#    server_name pressabl12.hellyer.kiwi stuff.hellyer.kiwi;
+
+    # Use specific directory for letsencrypt authentication.
+    location ~ /.well-known/acme-challenge/ {
+        allow all;
+        root /var/www/acme;
+        try_files $uri =404;
+    }
+
+    # For all other requests
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}

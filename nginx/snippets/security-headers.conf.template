@@ -1,0 +1,21 @@
+# Shared security headers.
+# Include at server level AND inside any location that defines its own
+# add_header (nginx does not inherit add_header from a parent context into
+# a location that declares any add_header of its own).
+#
+# Change once -> every vhost and cached location follows.
+#
+# RENDERED from this template by scripts/render-config.sh. In test mode the
+# HSTS header line below is dropped; production keeps it. (Rationale: on the
+# test server browsers must be able to proceed past the self-signed fallback
+# certs, and HSTS errors are non-bypassable.)
+
+__HSTS__
+add_header X-Xss-Protection "1; mode=block" always;
+add_header X-Frame-Options "SAMEORIGIN" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header Referrer-Policy "origin-when-cross-origin" always;
+add_header Permissions-Policy "geolocation=(), camera=(), microphone=()" always;
+
+# Debug header showing whether the response came from the fastcgi cache.
+add_header X-Cache-Status $upstream_cache_status always;

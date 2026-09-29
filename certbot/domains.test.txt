@@ -1,0 +1,5 @@
+# TEST cert list — ONE real Let's Encrypt cert ("pressabl") covering the
+# domains listed below (each needs DNS pointed at this host first). When this
+# box becomes the production server, set CERTBOT_DOMAINS_FILE to
+# certbot/domains.txt (or leave .env unset) to move to the full production list.
+pressabl spam-destroyer.hellyer.kiwi tweets.hellyer.kiwi

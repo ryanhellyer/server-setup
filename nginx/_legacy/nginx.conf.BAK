@@ -1,0 +1,158 @@
+user www-data;
+worker_processes 10;
+pid /run/nginx.pid;
+error_log /var/log/nginx/error.log;
+include /etc/nginx/modules-enabled/*.conf;
+
+events {
+	worker_connections 1024;
+	multi_accept on;
+}
+
+http {
+
+	##
+	# Basic Settings
+	##
+
+	sendfile on;
+	tcp_nopush on;
+	types_hash_max_size 2048;
+	keepalive_timeout 15;
+	client_max_body_size 64m;
+
+	# server_tokens off;
+
+	# server_names_hash_bucket_size 64;
+	# server_name_in_redirect off;
+
+	include /etc/nginx/mime.types;
+	default_type application/octet-stream;
+
+	##
+	# SSL Settings
+	##
+	ssl_protocols TLSv1.2 TLSv1.3;
+	ssl_ciphers EECDH+CHACHA20:EECDH+AES;
+	ssl_ecdh_curve X25519:prime256v1:secp521r1:secp384r1;
+	ssl_prefer_server_ciphers on;
+
+	##
+	# Logging Settings
+	##
+
+	access_log /var/log/nginx/access.log;
+
+	##
+	# Security Settings
+	##
+	add_header Strict-Transport-Security "max-age=63072000; includeSubdomains; preload";
+	add_header X-Xss-Protection "1; mode=block" always;
+	add_header X-Frame-Options "SAMEORIGIN" always;
+	add_header X-Content-Type-Options "nosniff" always;
+	add_header Referrer-Policy "origin-when-cross-origin" always;
+	add_header Permissions-Policy "geolocation=(), camera=(), microphone=()";
+
+	##
+	# Nginx caching
+	#
+	fastcgi_cache_path /var/cache/nginx levels=1:2 keys_zone=PRESSABL:500m inactive=60m;
+	fastcgi_cache_key "$scheme$request_method$host$request_uri";
+	fastcgi_cache_use_stale error timeout invalid_header http_500;
+
+	##
+	# Mapping for controlling no-cache functionality.
+	# This is more efficient performance wise than using "if" conditionals
+	map $request_method $no_cache { default 0; POST 1; } 
+	map $request_uri $no_cache { default $no_cache; "~*(/wp-admin/|/xmlrpc.php|/wp-.*.php)" 1; }
+	map $http_cookie $no_cache { default $no_cache; "~*(comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in)" 1; }
+
+
+##
+# Map domains to their platform type
+#
+map $http_host $platform_type {
+    ryan.hellyer.kiwi    "laravel";
+    default              "wordpress";
+}
+
+##
+# Final decision on no-cache
+#
+map "$platform_type:$http_cookie" $no_cache_platform {
+    # If WordPress site and WP cookies are present -> Bypass
+    "~*wordpress:(comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_logged_in)" 1;
+    
+    # If Laravel site -> Do not bypass based on WP cookies
+    "~*laravel:.*" 0;
+
+    default 0;
+}
+
+
+        # Map uploads folders
+        map $http_host $blogid {
+                default                    0;
+                ryan.hellyer.kiwi          3;
+                geek.hellyer.kiwi          6;
+                dunedinicehockey.co.nz     5;
+                random.hellyer.kiwi        7;
+                ice.hellyer.kiwi           15;
+                nb.hellyer.kiwi            16;
+                external-posts             19;
+                hellyer.kiwi               24;
+                #secure.hellyer.kiwi        25;
+                comic-glot.hellyer.kiwi    26;
+                offline-demo.hellyer.kiwi  27;
+                instagram.hellyer.kiwi     28;
+                salatkomplett.com          31;
+                tweets.hellyer.kiwi        17;
+                facebook.hellyer.kiwi      20;
+                freeadviceberlin.org       35;
+                berlin-advice.hellyer.kiwi 37;
+                psychedelicsocietyberlin.org psb;
+        }
+
+	##
+	# Gzip Settings
+	##
+
+	gzip on;
+
+	# gzip_vary on;
+	gzip_proxied any;
+	# gzip_comp_level 6;
+	# gzip_buffers 16 8k;
+	# gzip_http_version 1.1;
+	gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+	##
+	# Virtual Host Configs
+	##
+
+	include /etc/nginx/sites.conf;
+	#include /etc/nginx/conf.d/*.conf;
+	#include /etc/nginx/sites-enabled/*;
+}
+
+
+#mail {
+#	# See sample authentication script at:
+#	# http://wiki.nginx.org/ImapAuthenticateWithApachePhpScript
+#
+#	# auth_http localhost/auth.php;
+#	# pop3_capabilities "TOP" "USER";
+#	# imap_capabilities "IMAP4rev1" "UIDPLUS";
+#
+#	server {
+#		listen     localhost:110;
+#		protocol   pop3;
+#		proxy      on;
+#	}
+#
+#	server {
+#		listen     localhost:143;
+#		protocol   imap;
+#		proxy      on;
+#	}
+#}

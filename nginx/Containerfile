@@ -1,0 +1,23 @@
+# Nginx container — Ubuntu nginx + Brotli modules.
+# The whole /etc/nginx layout is bind-mounted read-only from ./nginx, so the
+# repo is the single source of truth. This image only provides nginx + the
+# brotli modules the config loads (modules-enabled/*.conf).
+
+FROM docker.io/ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        nginx \
+        libnginx-mod-http-brotli-filter \
+        libnginx-mod-http-brotli-static \
+        openssl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /etc/nginx/sites-enabled/default
+
+# The repo's nginx/ directory is mounted at /etc/nginx by compose.
+# Config test:  podman run --rm -v "$PWD/nginx:/etc/nginx:ro" nginx nginx -t
+EXPOSE 80 443
+CMD ["nginx", "-g", "daemon off;"]

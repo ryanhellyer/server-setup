@@ -1,470 +1,496 @@
-sudo apt install php8.5-mysql
-
-# Needed for chat.hellyer.kiwi
-sudo apt install podman podman-compose
-
-# Needed for Spam Destroyer site
-sudo apt install php8.5-intl php8.5-mbstring php8.5-curl php8.5-gd
-
-
-# Mount Hetzner box
-sudo mkdir -p /var/gmail
-sudo chown $USER:$USER /var/gmail
-sshfs -p 23 u458814@u458814.your-storagebox.de:/home/gmail /var/gmail
-
-sudo mkdir -p /var/yandex-disk
-sudo chown $USER:$USER /var/yandex-disk
-sshfs -p 23 u458814@u458814.your-storagebox.de:/home/gmail /var/yandex-disk
-
-sudo mkdir -p /var/databases
-sudo chown $USER:$USER /var/databases
-sshfs -p 23 u458814@u458814.your-storagebox.de:/home/databases /var/databases
-
-sudo mdkir -p /var/sync
-sudo chown $USER:$USER /var/sync
-sshfs -p 23 u513410@u513410.your-storagebox.de:/home/sync /var/sync
-
-
-
-
-sudo nano /etc/fstab
-# Adding mount points for primary Hetzner box folders
-u458814@u458814.your-storagebox.de:/home/gmail /var/gmail fuse.sshfs x-systemd.automount,port=23,allow_other,reconnect,IdentityFile=/home/ryan/.ssh/id_ed25519,entry_timeout=0,attr_timeout=0,cache=no,_netdev 0 0
-u458814@u458814.your-storagebox.de:/home/yandex-disk /var/yandex-disk fuse.sshfs x-systemd.automount,port=23,allow_other,reconnect,IdentityFile=/home/ryan/.ssh/id_ed25519,entry_timeout=0,attr_timeout=0,cache=no,_netdev 0 0
-u458814@u458814.your-storagebox.de:/home/databases /var/databases fuse.sshfs x-systemd.automount,port=23,allow_other,reconnect,IdentityFile=/home/ryan/.ssh/id_ed25519,entry_timeout=0,attr_timeout=0,cache=no,_netdev 0 0
-
-
-
-
-# Brotli
-sudo add-apt-repository universe
-sudo apt update
-sudo apt install libnginx-mod-http-brotli-filter libnginx-mod-http-brotli-static
-
-
-# Redis
-sudo mkdir -p /etc/redis
-sudo cp /usr/share/redis/redis.conf /etc/redis/redis.conf;
-sudo nano /etc/redis/redis.conf
- * maxmemory 1024mb
- * maxmemory-policy: allkeys-lru
-sudo systemctl restart redis-server
-
-# Redis possible fix for when Redis can't read it's own config files - it may work without this, but it may not be able to do internal analysis if it fails well - I didn't fully understand this. It came from AI advice.
-sudo chmod 755 /etc/redis/ && sudo chown root:root /etc/redis/ && sudo chmod 644 /etc/redis/redis.conf && sudo 
-  chown root:root /etc/redis/redis.conf && sudo chmod 755 /var/lib/redis && sudo chown redis:redis /var/lib/redis &&
-   sudo chmod 755 /var/log/redis && sudo chown redis:redis /var/log/redis && sudo mkdir -p /run/redis && sudo chown 
-  redis:redis /run/redis && sudo chmod 755 /run/redis && echo "d /run/redis 0755 redis redis -" | sudo tee 
-  /etc/tmpfiles.d/redis-server.conf && sudo systemctl restart redis-server
-
-
-
-
-# PHP OPcache
-$ sudo nano /etc/php/8.4/fpm/conf.d/10-opcache.ini
-
-; configuration for php opcache module
-; priority=10
-zend_extension=opcache.so
-
-; Enable OPcache
-opcache.enable=1
-opcache.enable_cli=0
-
-; Memory settings
-opcache.memory_consumption=128
-opcache.interned_strings_buffer=16
-opcache.max_accelerated_files=10000
-
-; Performance settings
-opcache.revalidate_freq=20
-opcache.validate_timestamps=1
-opcache.fast_shutdown=1
-
-; For production - disable timestamp validation (faster)
-; Set validate_timestamps=1 if you want to check file changes (slower but useful in dev)
-opcache.validate_timestamps=1
-
-; JIT compiler (optional, can improve performance further)
-opcache.jit=1255
-opcache.jit_buffer_size=64M
-
-
-
-
-
-
-
-
-sudo apt install pigz;
-sudo apt install getmail6;
-
-$ sudo apt-get install php8.4-sqlite3
-
-
-
-TODO
-SHOULD INCREASE MAX UPLOAD SIZE
-SHOULD TURN ON OPCACHE
-SHOULD INSTALL NAXSI
-
-
-Base installation package:
-sudo apt update;sudo apt install mariadb-server certbot python3-certbot-nginx zip htop sendmail nginx sshfs curl git ufw fail2ban nginx php8.4-fpm php8.4-mysql php8.4-mbstring php8.4-zip php8.4-intl php8.4-imagick php8.4-gd php8.4-curl php8.4-dom php8.4-xml php8.4-cli redis-server php8.4-redis postfix unzip logrotate net-tools awscli composer ffmpeg -y;
-
-Install AWS CLI:
-unzip awscliv2.zip
-sudo ./aws/install
-rm -rf aws awscliv2.zip
-
-
-
-
-
-** For low RAM servers, need swap file to stop shit crashing when memory maxes out: **
-sudo fallocate -l 2G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-sudo swapon -s
-sudo nano /etc/fstab
-	# add this new line to the end of the file to make it reload on reboot
-	/swapfile none swap sw 0 0
-
-
-
-Add custom 404 (and 500/502/503/504) page to Varnish block - see Pressabl
-
-Shouldn't add root key to external server - found near beginning of instructions
-
-sudo apt-get install s3cmd - for backup server
-
-Gzip settings in nginx.conf need added
-worker_processes  1; // equal to number of CPU's
-
-RSYNC FROM OTHER SERVER:
-sudo rsync -chavzP --stats ryan@109.74.195.197:/usr/share/nginx/html/wp-content/blogs.dir/ /mnt/volume-nyc1-01/wordpress.hellyer.kiwi/public_html/wp-content/blogs.dir/
-
-
-
-For pressabl, daisy chain the letsencrypts together all at once
-# sudo letsencrypt certonly -a webroot --webroot-path=/mnt/volume-nyc1-01/wordpress.hellyer.kiwi/public_html/ -d tweets.hellyer.kiwi -d wordpress.hellyer.kiwi
-
-
-This is all screwed up. Varnish should be on another port (used 8081 on new Pressabl), not port 80.
-Can use the following to switch Varnish ports
-# sudo service varnish stop
-# sudo varnishd -f /etc/varnish/user.vcl -s malloc,1G -a 0.0.0.0:8081
-# sudo service varnish start
-
-custom-exec.conf is also still on port 80 and needs changed
-
-Also need to add port 80 block to nginx config so letsencrypt works and it redirects to https otherwise
-Alos need to remove redirect for https from VCL stuff
-
-
-CHANGES: MyNewPassword - needs var set
-CHANGED ALREADY: Change "cgi.fix_pathinfo" to "0" and uncomment it's line for improved security.
-Replace with "domain.txt". - should be domain.conf
-Doesn't match password created earlier: wp core config --dbname=pressabl --dbuser=ryan --dbpass=PASSWORD --dbhost=localhost --dbprefix=test
-Needs the quotes like this, so that funky passwords work, the double quotes failed ....wp core config --dbname=pressabl --dbuser=ryan --dbpass='ztdpaA7387!#' --dbhost=localhost --dbprefix=pressabl
-Need vars for these ... wp core install --url=https://wordpress.hellyer.kiwi --title="Test Site" --admin_user=wordpressadmin --admin_password=wordpresspassword --admin_email=wordpress@gmail.com
-Needed wp-content added to the path ... sudo chown www-data:www-data wp-content/uploads -R
-
-
-
-# Things to do first
-* Install Ubuntu 16.04 with public key authentication
-* Point domain at new IP address
-* MOUNT 20 GB DRIVE AND USE THAT INSTEAD OF /VAR/WWW/ - automatically mounts on reboot
-
-Variables which need to be changed before using this tutorial:
-
-Server details
-
-	IPAddress
-	/var/www/
-	your_email@example.com
-	ryanuser
-	droplet3.hellyer.kiwi
-
-SQL
-
-	ryansqluser
-	SQLRootPassword
-	wordpressdb
-
-External backup server
-
-	external_server_username
-	IPExternalAddress
-	/external/server/path/
-
-GitHub
-
-	git@github.com:ryanhellyer/server-setup.git
-	ryanhellyer@gmail.com"
-	Ryan Hellyer
-	githubrepo
-	github@gmail.com
-	githubusername
-
-WordPress
-
-	Test Site
-	wordpressadmin
-	wordpresspassword
-	wordpress@gmail.com
-
-
-Select defaults unless otherwise specified.
-
-# Login as root
-	ssh root@IPAddress
-
-# Create public key and copy to external server (used for backing stuff up later)
-Choose defaults (no password).
-
-	ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
-
-Copy public key to the ~/.ssh/authorized_keys file on the external server
-
-	cat ~/.ssh/id_rsa.pub
-
-# Setup new user
-Create new user, set their password, give them sudo priviledges and log in as them.
-
-	adduser ryanuser # Create new user
-	usermod -aG sudo ryanuser
-	exit
-	ssh ryanuser@IPAddress
-
-Remove the need for a password when logging in as the new user. First we create the new SSH folder, then add our own public key (found on your local computer) to the authorized_keys file.
-
-	mkdir ~/.ssh
-	nano ~/.ssh/authorized_keys
-	chmod 600 ~/.ssh/authorized_keys
-
-Improve security by changing the line that specifies "PasswordAuthentication". uncomment it, then change its value to "no". Then reload the SSH daemon.
-
-	sudo nano /etc/ssh/sshd_config
-
-	sudo systemctl reload sshd
-
-Confirm the new login works with no password before continuing.
-
-	exit
-	ssh ryanuser@IPAddress
-
-# Adjust firewall settings
- Allow OpenSSH and enable UFW by selecting "y"
-
-	sudo ufw allow OpenSSH
-	sudo ufw enable
-
-# Install Nginx
-	sudo apt-get update
-	sudo apt-get install nginx
-	sudo ufw allow 'Nginx HTTP'
-
-# Implement new Nginx configuration - copy default.txt
-	sudo nano /etc/nginx/sites-available/default
-
-# Setup Lets Encrypt
-	sudo apt-get install letsencrypt
-	sudo mkdir /var/www/droplet3.hellyer.kiwi/
-	sudo mkdir /var/www/droplet3.hellyer.kiwi/public_html/
-	sudo service nginx restart
-	sudo letsencrypt certonly -a webroot --webroot-path=/var/www/droplet3.hellyer.kiwi/public_html/ -d droplet3.hellyer.kiwi
-
-Generate Diffie Hellman group - takes a while!
-
-	sudo openssl dhparam -out /etc/ssl/certs/dhparam.pem 2048
-
-Copy from "ssl-domain.conf".
-
-	sudo nano /etc/nginx/snippets/ssl-droplet3.hellyer.kiwi.conf
-
-Copy from "ssl-params.conf".
-
-	sudo nano /etc/nginx/snippets/ssl-params.conf
-
-
-Removing default config now that we've obtained our TLS certificate
-
-	sudo rm /etc/nginx/sites-available/default
-
-Allow Nginx HTTPS through the firewall
-
-	sudo ufw allow 'Nginx Full'
-
-Reboot Nginx (PROBABLY NOT NECESSARY)
-
-	sudo service nginx restart
-
-# Install Varnish
-Add Varnish repository to aptitude.
-
-	curl https://repo.varnish-cache.org/ubuntu/GPG-key.txt | sudo apt-key add -
-	sudo sh -c 'echo "deb https://repo.varnish-cache.org/ubuntu/ trusty varnish-4.0" >> /etc/apt/sources.list.d/varnish-cache.list'
-	sudo apt-get update
-	sudo apt-get install varnish
-
-Change the port to "80" and manually set config file location to "user.vcl".
-DAEMON_OPTS="-a :8081 \
--f /etc/varnish/user.vcl \
-
-	sudo nano /etc/default/varnish
-
-Copy "user.vcl".
-
-	sudo nano /etc/varnish/user.vcl
-
-Reboot Nginx
-
-	sudo service nginx restart
-
-	sudo mkdir /etc/systemd/system/varnish.service.d/
-
-Copy "customexec.conf".
-
-	sudo nano /etc/systemd/system/varnish.service.d/customexec.conf
-
-Restart Varnish
-
-	sudo systemctl daemon-reload
-	sudo service varnish restart
-
-# Setup automatic security updates
-# should also add features from here: https://help.ubuntu.com/lts/serverguide/automatic-updates.html
-Follow the prompts to enable automatic security upgrades.
-
-	sudo apt-get install unattended-upgrades
-	sudo dpkg-reconfigure -plow unattended-upgrades
-
-# Install MariaDB
-	sudo apt-get install mariadb-server
-
-Set MariaDB root password
-
-	sudo mysql -u root
-	[mysql] use mysql;
-	[mysql] update user set plugin='' where User='root'; # Forcing password usage
-	[mysql] flush privileges;
-	[mysql] SET PASSWORD FOR 'root'@'localhost' = PASSWORD('SQLRootPassword');
-
-Create new database and add new user to it
-
-	[mysql]CREATE DATABASE wordpressdb;
-	[mysql]GRANT ALL PRIVILEGES ON wordpressdb.* To 'ryansqluser'@'localhost' IDENTIFIED BY 'MyNewPassword';
-	[mysql] exit;
-
-# Install PHP 7
-Install PHP FPM and PHP MySQL and PHP mbstring
-
-	sudo apt install php7.3-fpm php7.3-mysql php7.3-mbstring php7.3-zip php7.3-intl php7.3-imagick php7.3-gd php7.3-curl php7.3-dom php7.3-dom
-
-Change "cgi.fix_pathinfo" to "0" for improved security.
-
-	sudo nano /etc/php/7.3/fpm/php.ini
-
-Replace existing files with "nginx.conf", "restrictions.conf" and "wordpress.conf"
-
-	sudo mkdir /etc/nginx/global/
-	sudo nano /etc/nginx/global/restrictions.conf
-	sudo nano /etc/nginx/nginx.conf
-	sudo nano /etc/nginx/global/wordpress.conf
-
-Replace with "domain.txt".
-
-	sudo nano /etc/nginx/sites-available/droplet3.hellyer.kiwi.conf
-
-Softlink to enable the site
-
-	sudo ln -s /etc/nginx/sites-available/droplet3.hellyer.kiwi.conf /etc/nginx/sites-enabled/droplet3.hellyer.kiwi.conf
-
-# Install WP CLI (it'd be nice to setup auto-updating in future)
-	cd /var/www/
-	sudo curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
-	sudo chmod +x wp-cli.phar
-	sudo mv wp-cli.phar /usr/local/bin/wp
-
-	sudo chown ryan:ryan droplet3.hellyer.kiwi/public_html/
-	cd /var/www/droplet3.hellyer.kiwi/public_html/
-	wp core download
-	wp core config --dbname=wordpressdb --dbuser=ryansqluser --dbpass=PASSWORD --dbhost=localhost --dbprefix=test
-
-Move wp-config.php outside of the web root
-
-	sudo mv /var/www/droplet3.hellyer.kiwi/public_html/wp-config.php /var/www/droplet3.hellyer.kiwi/wp-config.php
-
-Add "wp-config.php" to beginning of file.
-
-	sudo nano /var/www/droplet3.hellyer.kiwi/wp-config.php
-
-Install WordPress.
-
-	wp core install --url=https://droplet3.hellyer.kiwi --title="Test Site" --admin_user=wordpressadmin --admin_password=wordpresspassword --admin_email=wordpress@gmail.com
-
-Set permalinks.
-	wp rewrite structure '/%postname%/'
-	sudo chown www-data:www-data uploads -R
-
-Set permissions and ownership
-
-	sudo chown www-data:www-data wp-content/uploads -R
-	sudo chmod 744 wp-content/uploads -R
-#	sudo chmod 400 ../../wp-config.php - this is causing problems
-
-# Install Redis
-Install the Redis object cache. This results in a substantial improvement in the loading of dynamic WordPress pages.
-
-	sudo apt-get install redis-server redis-tools php-redis
-	wp plugin install wp-redis --activate
-	mv wp-content/plugins/wp-redis/object-cache.php wp-content/object-cache.php
-	sudo service php7.0-fpm restart
-
-# Remove and add plugins
-	wp plugin uninstall hello
-	wp plugin uninstall akismet
-	wp plugin install google-authenticator --activate
-
-# Setup Cron jobs for WP CLI
-Copy "wordpress-updates.sh".
-
-	sudo nano /var/www/wordpress-updates.sh
-
-# Backup stuff to external server
-Copy "wordpress-backups.sh".
-
-	sudo nano /var/www/wordpress-backups.sh
-
-# Automate stuff
-Copy "crontab.txt".
-
-	sudo crontab -e
-
-Copy "wp-cron.sh" and edit it's domain name
-	sudo nano /var/www/wp-cron.sh
-
-# Auto-deployment from GitHub
-ssh-keygen -t rsa -b 4096 -C "ryanhellyer@gmail.com"
-
-Copy to GitHub - https://github.com/settings/ssh
-
-	cat ~/.ssh/id_rsa.pub
-
-	git clone git@github.com:githubrepo/server-setup.git .
-	git config --user.email "github@gmail.com"
-	git config --user.name "githubusername"
-
-Copy "auto-deployment.sh"
-
-	sudo nano /mnt/volume-nyc1-01/auto-deployment.sh
-
-
-# Install HTOP for performance analysis
-sudo apt-get install htop
-
-# Setup mail handling
-sudo apt-get install sendmail
+# server-setup
+
+## TODO
+
+~/gmail should update
+Backup MariaDBs - not sure if this is working on live site yet or not
+
+----
+
+The containerised web stack for **hellyer.kiwi** (Nginx + PHP 8.5 + MariaDB +
+Valkey + Node), deployed with Podman. Everything needed to rebuild the server
+lives in this repo.
+
+## Install on a fresh Ubuntu server — one line
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ryanhellyer/server-setup2/master/install/setup.sh \
+  -o /tmp/setup.sh && sudo bash /tmp/setup.sh
+```
+
+That one command is fully hands-off after the two prompt types below:
+
+1. **Installs the host tools** (podman, podman-compose, curl, openssl, nano...) plus the
+   **Starship prompt** (config in `config/starship.toml`).
+2. **Creates an admin user `ryan`** with your SSH key and passwordless `sudo`
+   (key-only; `scripts/create-admin-user.sh`).
+3. **Downloads the repo as a tarball** from GitHub (public — no git/keys needed).
+4. **Opens the firewall ports** 22/80/443.
+5. **Generates a standard storage key** (`~/.ssh/id_ed25519`) and authorises it on
+   all three storage boxes (primary, snapshot source and the off-site backup
+   box), then mounts `gmail`/`databases` under `ryan`'s home.
+6. **Deploys automatically** — creates `.env` with a generated MariaDB root
+   password (no editor), builds the images, brings up the whole stack, installs
+   systemd units + the nightly-backup/TLS-renewal timers, then **imports every
+   site (files + databases, each with its own DB user) and the Open WebUI data**
+   from the newest storage snapshot. Anything in the snapshot that is *not* a
+   site (backup scripts, configs, cron, old copies, misc data) is copied to
+   **`~/tools`**.
+7. **Issues real TLS** for the domains in `CERTBOT_DOMAINS_FILE` (test mode: the
+   test domain(s)); this needs DNS pointed at the host first.
+
+The only manual bits: **point DNS** at this host, and type each **storage box
+password once** when asked (to authorise the key).
+
+> **Where does each script run?** `install/setup.sh` (and `deploy.sh`) install on the
+> machine they are **executed on** — they do not touch anything remote. Run
+> `install/setup.sh` **on the server**. To install a *remote* server from your laptop,
+> use `bootstrap.sh` below. (Both refuse to run on a host without `apt-get` +
+> `systemd`, so a stray `install/setup.sh` on your laptop won't install anything.)
+
+## Install / manage a remote server from your laptop
+
+`bootstrap.sh` provisions and drives a server over SSH from your own machine.
+Hetzner ships boxes with password auth, so the first contact uses the password
+**once**; the script then installs your public key, creates the admin user, and
+disables password auth. Running it again on the same host **updates the
+server's copy of the repo** (it always runs the current `install/setup.sh` from
+GitHub; see step 4). `--host` is the only required flag.
+
+```bash
+./bootstrap.sh --host 203.0.113.10        # install (new box) or update, then the menu
+./bootstrap.sh --host box.example.com --no-harden
+```
+
+What it does, in order:
+
+1. Installs your key for the login user (default `root`) — one password prompt.
+2. Creates `ryan` with the same key and `NOPASSWD` sudo
+   (`scripts/create-admin-user.sh`).
+3. Hardens sshd — `PasswordAuthentication no`, `PermitRootLogin
+   prohibit-password` (`scripts/harden-sshd.sh`). It refuses to run unless a key
+   is already installed for `root` or `ryan`, so it can't lock you out.
+4. Runs the **current** `install/setup.sh` from GitHub (not the server's local
+   copy). On a new box that bootstraps; if the repo is already in the admin
+   user's home (`~/server-setup`) it **reinstalls** — refreshes the files in
+   place (tarball re-download, or `git pull` for git installs) — then opens the
+   on-server menu. The refresh is **files-only**; it never re-provisions
+   sites/DBs (that's menu option 1).
+
+Flags: `--user`, `--admin-user`, `--port`, `--identity`, `--no-harden`.
+`--install` is accepted for compatibility (install-or-update is now always what
+runs). The password is entered by `ssh` and never stored.
+
+> Changed your mind? `sudo bash scripts/harden-sshd.sh --revert` restores
+> password authentication.
+
+## Everything else: `sudo ./install/setup.sh`
+
+`install/setup.sh` is the one script to remember. **Re-running it on a server
+that already has the repo reinstalls the files** — it refreshes them in place
+from GitHub (tarball re-download, or `git pull` for git installs), then shows an
+interactive menu that delegates to the scripts in `scripts/`. The refresh is
+files-only, so generated files/secrets (`.env`, rendered configs, certs) are
+safe; it does **not** re-provision sites/DBs. `SETUP_NO_REFRESH=1` skips it. The
+menu:
+
+- **1)** full deploy / update the stack
+- **2)** add a new site
+- **3)** back up
+- **4)** restore from backup
+
+Everything else is a direct script call (the SSH login banner lists them too);
+see the **Day-to-day** table below for the exact commands — TLS
+(`scripts/certbot-issue.sh`), systemd units (`scripts/install-systemd.sh`), host
+CLI tools (`scripts/install-cli.sh`), stack status (`pod-status`), logs
+(`pod-logs`), storage boxes (`scripts/storage-mounts.sh`) and SSH hardening
+(`scripts/harden-sshd.sh`).
+
+## Manual path
+
+```bash
+sudo ./scripts/host-setup.sh          # one-time host setup (packages + dirs + swap)
+mkdir -p ~/server-setup
+curl -fsSL https://github.com/ryanhellyer/server-setup2/archive/refs/heads/master.tar.gz | \
+  tar -xz --strip-components=1 -C ~/server-setup
+cd ~/server-setup
+cp .env.example .env      # scripts/deploy.sh does this (with generated secrets) automatically
+sudo ./install/setup.sh                 # menu: pick "Full install / deploy / update"
+```
+
+> **Config templates:** `nginx/nginx.conf`, `php/fpm-www.conf` and `maria/my.cnf`
+> are generated from their `.template` files by `scripts/render-config.sh` on
+> every deploy (values from `.env`). They're not committed — edit the `.template`
+> files instead. A fresh `podman compose up` without a prior deploy won't find
+> them, so always go through `scripts/deploy.sh` first.
+
+## Day-to-day
+
+| Thing | Command |
+|---|---|
+| Menu: deploy, add a site, backup, restore | `sudo ./install/setup.sh` |
+| Deploy / update the stack (no menu) | `sudo bash scripts/deploy.sh` (refreshes files from the tarball, keeps `.env`) |
+| Refresh images + container OS packages (no data changes) | `sudo bash scripts/update.sh` (weekly `server-update.timer`) |
+| Add a site (no menu) | `sudo bash scripts/new-site.sh <domain> <type>` |
+| Back up (off-site snapshots + DB dumps) | `sudo bash scripts/backup.sh` |
+| Restore from off-site backup | `sudo bash scripts/restore.sh --from-backup [DATE] [www\|tools\|mariadbs\|gmail\|server-setup\|all]` |
+| Issue/renew TLS | `sudo bash scripts/certbot-issue.sh` |
+| Fix web-dir ownership + permissions (ryan:www-data, setgid) | `sudo bash scripts/fix-perms.sh` (re-run after `restore.sh`) |
+| Import every site + DB + Open WebUI (always fresh) | `sudo bash scripts/provision-all.sh` (auto-run by `deploy.sh`) |
+| Restore one site fully (files + DB) | `sudo bash scripts/provision-site.sh <snapshot-dir> [--to <dir>]` |
+| Restore every site found in the snapshot | `sudo bash scripts/migrate-sites.sh [--dry-run]` |
+| Build a site's front-end assets (Vite) in the `node` container | `sudo bash scripts/build-assets.sh <site> [--force]` (auto-run by `provision-site.sh`) |
+| Copy the snapshot's non-site files (backup scripts, configs, cron) into `~/tools` | `sudo bash scripts/provision-extras.sh [--force]` |
+| Connect the storage boxes + mount `gmail`, `mariadbs` | `sudo bash scripts/storage-mounts.sh` |
+| Create/refresh the admin user (`ryan`) with a key + passwordless sudo | `sudo bash scripts/create-admin-user.sh` |
+| Harden SSH (keys only) / revert | `sudo bash scripts/harden-sshd.sh [--revert]` |
+| Provision a remote server, or update its files + open its menu over SSH | `./bootstrap.sh --host <ip>` |
+| Run CLI tools on the host (php, composer, mariadb, ffmpeg...) | `bash scripts/install-cli.sh` |
+| Open a terminal in a container (defaults to the PHP box) | `pod-login [container]` |
+| Install / remove the SSH login helper banner | `sudo bash scripts/install-login-help.sh [--remove]` |
+| Re-apply host packages / Starship / swap / firewall / fail2ban / journald cap | `sudo bash scripts/host-setup.sh` |
+| See the full architecture & rebuild plan | [`PODMAN_PLAN.md`](PODMAN_PLAN.md) |
+
+### Host helper commands
+
+`scripts/install-cli.sh` (run by `deploy.sh`) drops wrappers into
+the admin user's `~/.local/bin` — the php/composer/mariadb/... commands above,
+which self-sudo (type them without `sudo`; they proxy into the containers) —
+plus these container helpers:
+
+| Command | What it does |
+|---|---|
+| `pod-login [container]` | interactive shell (default `php-fpm`); mirrors cwd, auto-sudo, `-u user` |
+| `pod-logs [container] [-f] [-n N]` | print / follow a container's logs (default `php-fpm`) |
+| `pod-status` | fixed-order stack state + health table; exits non-zero if degraded |
+| `pod-restart <container>` / `--all [-y]` | restart one container or the whole stack |
+| `sites` | list the sites under `~/www` with their type and database |
+| `cert-status` | TLS certificate domains + expiry (offline, via `openssl`) |
+
+```bash
+pod-login                 # root shell in php-fpm (the main PHP box)
+pod-login mariadb         # root shell in the database container
+pod-login -u www-data php-fpm   # as www-data, so files stay owned correctly
+pod-login --list          # show the running stack containers
+pod-logs nginx -f         # follow the web-server logs
+pod-restart --all         # restart the whole stack
+```
+
+`pod-login` mirrors your current directory into the container when you are under
+the web root (`~/www` -> `/var/www`) and runs under `sudo` automatically; it
+defaults to `php-fpm` because that is where the PHP tooling (and the site files)
+live.
+
+**The same list is shown every time you log in over SSH**, along with a live
+status block (backups, TLS expiry, disk, site count). `deploy.sh` installs
+`/etc/update-motd.d/99-server-setup`, which Ubuntu's `pam_motd` prints on
+interactive logins, and **disables the stock Ubuntu MOTD fragments** (header,
+help text, landscape sysinfo, motd-news, updates-available, …) so only this
+banner shows. Re-install or remove it with:
+
+```bash
+sudo bash scripts/install-login-help.sh            # (re)install the banner
+sudo bash scripts/install-login-help.sh --remove   # remove it + restore Ubuntu's
+```
+
+### Automatic updates
+
+* **Host OS:** `unattended-upgrades` installs all Ubuntu 26.04 updates daily
+  (including security/ESM). If an update needs a reboot, the box reboots itself
+  at **03:30** (`/etc/apt/apt.conf.d/99-server-setup-autoreboot`), and superseded
+  kernels + auto-installed dependencies are cleaned up.
+* **Containers:** nothing updates the images by itself — `compose up` reuses the
+  local image. `server-update.timer` runs `scripts/update.sh` weekly (Sun 04:00,
+  up to 30 min staggered) to pull the upstream images
+  (`mariadb`/`valkey`/`open-webui`/`certbot`) and rebuild `php`/`nginx`/`node`,
+  which re-runs `apt` so the Ubuntu packages *inside* the images are updated.
+  It does **not** re-provision sites, so site data is untouched. Logs:
+  `/var/log/server-setup/update.log`.
+
+### Firewall (ufw) and the containers
+
+`deploy.sh` enables ufw and sets up two things, both required because the
+containers sit behind podman's NAT:
+
+1. **Routed web ports** — `ufw route allow ... port 80/443`. Published container
+   ports are DNAT'd, so inbound traffic crosses ufw's FORWARD chain; without
+   this the default `deny (routed)` drops it and the box looks closed on 80/443
+   (even though it answers on 22).
+2. **The podman subnets** (input + routed), discovered via
+   `podman network inspect`. Without this, ufw blocks the netavark DNS, so
+   containers can't resolve `mariadb`/`valkey`/`open-webui` and the sites hang
+   (WordPress: "Error establishing a database connection"; Laravel:
+   name-resolution timeouts).
+
+### Open WebUI resilience
+
+`chat.hellyer.kiwi` keeps its SQLite DB on the shared volume. The container has
+**no podman restart policy** — systemd supervises it with a bounded restart
+(`StartLimitBurst=5`) and `CPUQuota=100%` / `MemoryMax=1536M`
+(`scripts/install-systemd.sh`), so a crash-looping app can't peg a core or spin
+forever. `scripts/provision-openwebui.sh` runs `PRAGMA integrity_check` on the
+restored `webui.db` and moves a corrupt one aside (Open WebUI then rebuilds a
+fresh DB) instead of looping.
+
+## Where the site files live
+
+Site files live in the **admin user's home** — `~/www` (e.g. `/home/ryan/www`),
+not `/var/www` — so they sit on the home partition and survive a move to an
+atomic/immutable distro such as Fedora Silverblue. Override in `.env` with
+`WWW_ROOT`.
+
+The containers still see the same files at **`/var/www`**: `compose.yaml` mounts
+`${WWW_ROOT:-/home/ryan/www}:/var/www`, so the nginx config
+(`nginx/conf.d/*.conf`) and the container images are unchanged. Host-side
+scripts translate between the two via `scripts/lib-paths.sh`.
+
+> **Upgrading a box that still has content in `/var/www`?** Move it once:
+> `sudo install -d -o ryan -g www-data -m 2775 /home/ryan/www && sudo rsync -a /var/www/ /home/ryan/www/`,
+> then `sudo bash scripts/deploy.sh` (or re-run `scripts/provision-all.sh`).
+
+`~/www` uses a shared-hosting permission model so files stay editable both by
+`ryan` (SSH) and by the containers (`www-data` — same uid/gid 33 on host and
+images):
+
+* owner `ryan`, group `www-data`; dirs `2775` (setgid), files `664`.
+* `ryan` is added to the `www-data` group and gets `umask 002` in `.bashrc`
+  (`scripts/host-setup.sh`).
+* PHP-FPM creates files with `umask = 0002` (`php/fpm-www.conf`).
+* `sudo bash scripts/fix-perms.sh` re-applies ownership/modes (idempotent, run
+  automatically by `deploy.sh` and `new-site.sh`; re-run after `restore.sh`).
+
+> **Editing PHP on the host:** changes appear within ~10 seconds — OPcache
+> revalidates file timestamps every 10s (`opcache.revalidate_freq = 10` in
+> `php/10-opcache.ini`). To apply one immediately, `php-reload` (graceful) or
+> `sudo podman restart php-fpm`; `deploy.sh` reloads FPM automatically after
+> provisioning. (A stale `wp-config.php` otherwise shows up as WordPress's
+> "Error establishing a database connection" even when the DB is fine.)
+
+## Logs
+
+Per-site nginx logs live in the **admin user's home** — `~/logs/<site>/`
+(`access.log`, `error.log`) — **outside** the web roots, so a site backup or
+snapshot never includes them. Override in `.env` with `LOG_ROOT`.
+
+The containers see them at **`/var/log/sites`** (`compose.yaml` mounts
+`${LOG_ROOT:-/home/ryan/logs}:/var/log/sites`); the per-site nginx configs
+(`nginx/conf.d/wordpress-multisite.conf`, `secure-site.conf`, `php-site.conf`)
+point their logs there. Shared/global nginx logs stay under `/var/log/nginx`.
+
+`server-logs.timer` runs `logrotate` **hourly** against
+`/etc/logrotate-server-setup.conf`: `daily` + `maxsize 50M` + `rotate 14` +
+`compress`, so a normal day rotates once while a runaway log is cut as soon as
+it passes 50M. Rotation recreates the file and signals nginx to reopen it
+(`podman exec nginx nginx -s reopen`).
+
+> Application-level logs (e.g. Laravel's `storage/logs/`) are **not** managed
+> here — only the nginx per-site logs.
+
+## Gmail (getmail)
+
+`scripts/getmail.sh` fetches mail from Gmail over IMAP (SSL) into a Maildir at
+`~/gmail` using **getmail6**, and runs daily via `server-getmail.timer`:
+
+```bash
+sudo bash scripts/getmail.sh                 # write config + fetch
+sudo bash scripts/getmail.sh --config-only   # just (re)write the getmailrc
+```
+
+Config lives in `.env` (`GMAIL_USER`, `GMAIL_APP_PASSWORD` — a Google **app
+password**, `GMAIL_MAILDIR`, optional `GMAIL_MAILBOXES`). The `getmailrc` is
+written to the admin user's `~/.getmail/getmailrc` (mode 600) and the fetch runs
+as that user, so delivered files are owned correctly. `~/gmail` is normally the
+sshfs mount of the storage box's `/home/gmail` share (`scripts/storage-mounts.sh`);
+a plain local dir works too.
+
+> Migrating from an old server? Copy its `~/.getmail/oldmail-*` state files
+> across first, otherwise getmail re-downloads everything into the Maildir, and
+> make sure only one server runs getmail at a time.
+
+## Remote storage (snapshots, DB dumps)
+
+Snapshots of the old `/var/www`, the weekly DB dumps and the Open WebUI data
+live on remote storage (a Hetzner Storage Box by default), described by generic
+`STORAGE_*` vars in `.env`:
+
+* `STORAGE_USER` / `STORAGE_HOST` / `STORAGE_PORT` — the box.
+* `STORAGE_KEY` — the SSH key (`~/.ssh/id_ed25519`, generated by
+  `host-setup.sh`; authorised on the box by `storage-mounts.sh`).
+* `SNAPSHOT_ROOT` — dated snapshot dirs (e.g. `/home/pressabl/2026-09-20`); the
+  newest is used automatically. Pin `SNAPSHOT_DIR` to force a date.
+* `SNAPSHOT_RENAMES` — map a snapshot dir to a different local dir, e.g.
+  `spam-destroyer.com=spam-destroyer.hellyer.kiwi`.
+* `DB_DUMP_DIR` — where the `<db>-<date>.sql.gz` dumps are (the `~/mariadbs`
+  mount).
+
+### Non-site files: `~/tools`
+
+Sites land in `~/www`. Everything else in the newest snapshot — `backup.sh` and
+friends, `sites.conf`, `nginx.conf`, `crontab.txt`, `configs/`, `acme/`, old
+site copies (`*OLD*`, `*BACKUP*`, `*.bak-*`) and misc data dirs — is copied into
+**`~/tools`** by `scripts/provision-extras.sh`, which `provision-all.sh` runs on
+every deploy. The copied set is the exact complement of the site list (both come
+from `lib-storage.sh:snapshot_site_dirs()`), so sites are never duplicated.
+
+The copy runs **once per snapshot**: a hidden `~/tools/.snapshot` marker records
+which snapshot was copied, so trimming `~/tools` by hand survives later deploys.
+`--force` re-copies, `EXTRAS_EXCLUDE="name1 name2"` skips entries, and
+`PROVISION_EXTRAS=0` disables the step. Files keep their permissions (so the
+backup scripts stay executable); there is no `--delete`, so it never removes
+anything locally.
+
+**One-time key authorisation:** `storage-mounts.sh` installs the key on all
+three boxes (asking for each box's password once) with Hetzner's `install-ssh-key`,
+which appends and never replaces existing keys.
+
+## Migrating all sites (files + databases)
+
+`scripts/provision-site.sh` restores **one** site from the newest snapshot,
+deriving everything from the site's own files (no manifest). It is **always
+fresh**: files are rsynced with `--delete`, and the database is dropped,
+recreated and re-imported.
+
+1. syncs `<snapshot>/<dir>/` into `~/www/<local-dir>` (`SNAPSHOT_RENAMES`
+   applies, so `spam-destroyer.com` lands in `spam-destroyer.hellyer.kiwi`);
+2. detects the database from the app — Laravel `.env` (`DB_*`), **Symfony
+   `.env` (`DATABASE_URL`; sqlite → skipped)**, WordPress `wp-config.php`, or
+   sqlite (file only);
+3. creates the DB + its **own user (named after the DB)** with a fresh random
+   password and a least-privilege grant, then imports the newest
+   `<db>-*.sql.gz` (DEFINER clauses are stripped so the old shared user isn't
+   needed);
+4. points the app at the containers (`DB_HOST=mariadb`, `REDIS_HOST=valkey`,
+   `REDIS_URL=redis://valkey:6379`, `REDIS_PASSWORD=`), clears caches, fixes
+   permissions, reloads nginx;
+5. builds front-end assets when a site's Vite output is broken (see below).
+
+```bash
+sudo bash scripts/provision-site.sh cvs.hellyer.kiwi
+sudo bash scripts/provision-site.sh spam-destroyer.com --to spam-destroyer.hellyer.kiwi
+sudo bash scripts/provision-site.sh gpx.hellyer.kiwi --files-only   # SQLite app
+```
+
+### Front-end assets (Vite)
+
+A site snapshot can contain a `public/build/manifest.json` and a `public/build/assets/`
+directory from **different** Vite builds (e.g. captured mid-deploy). After a
+restore the manifest points at CSS/JS files that no longer exist, so the site
+serves 404s and renders unstyled. `scripts/build-assets.sh` runs `npm ci` +
+`npm run build` **inside the `node` container** (which shares `~/www` at
+`/var/www`) to regenerate a consistent build.
+
+`provision-site.sh` calls it automatically for any site that ships a
+`package.json` — but only when the output is actually missing/inconsistent, so
+healthy sites are skipped. Force a rebuild, or build a whole snapshot:
+
+```bash
+sudo bash scripts/build-assets.sh instantattend.com           # only if broken
+sudo bash scripts/build-assets.sh instantattend.com --force   # rebuild anyway
+sudo bash scripts/build-assets.sh --all --force               # every Vite site
+```
+
+> There is no `npm` on the host (by design). The `npm`/`node`/`npx` wrappers from
+> `scripts/install-cli.sh` proxy into the `node` container, e.g.
+> `cd ~/www/instantattend.com && npm run build`.
+
+
+`scripts/migrate-sites.sh` runs it across every site found in the newest
+snapshot (dirs with `public/`, `public_html/`, `.env` or `wp-config.php`), and
+`scripts/provision-all.sh` additionally imports the Open WebUI data — this is
+what `deploy.sh` runs on **every** deploy:
+
+```bash
+sudo bash scripts/migrate-sites.sh --dry-run        # show what it would do
+sudo bash scripts/provision-all.sh                  # everything, for real
+```
+
+Flags: `--files-only`, `--db-only`, `--dry-run`.
+
+> **Every deploy is destructive to server-side data** (files, DBs and Open WebUI
+> are replaced from the newest snapshot) — this box is a mirror of the backups.
+
+> Only the databases listed in the old `backup.conf` have dumps
+> (`pressabl`, `secure`, `events`, `cvs_hellyer_kiwi`, `spamannihilator`,
+> `kartastrophecup`). Other apps use SQLite, or are created empty and migrated.
+
+## Open WebUI (`chat.hellyer.kiwi`)
+
+`chat.hellyer.kiwi` is served by **Open WebUI** — its own container, not a PHP
+site. It's part of `compose.yaml` (service `open-webui`, data at
+`~/www/chat.hellyer.kiwi:/app/backend/data`), and nginx proxies to it over the
+`web` network (`nginx/conf.d/node-proxy.conf` → upstream `open-webui:8080`,
+with WebSocket + long-timeout settings).
+
+Restore/refresh its data from the storage box (newest dated snapshot):
+
+```bash
+sudo bash scripts/provision-openwebui.sh
+sudo bash scripts/provision-openwebui.sh --drop-vector-db   # force ChromaDB rebuild
+sudo bash scripts/provision-openwebui.sh --dry-run
+```
+
+It rsyncs `webui.db` + `uploads/` (skipping the transient `webui.db-wal`/`-shm`,
+`cache/`, and the old `install.sh`/tooling), reads `OPENROUTER_API_KEY` from the
+snapshot's `install.sh` into `.env` (never printed/committed), brings up the
+`open-webui` service, waits for `/api/version`, and reloads nginx.
+
+Notes: `vector_db/` is kept by default because the container path
+(`/app/backend/data`) is stable; use `--drop-vector-db` if RAG/embeddings
+misbehave. The container is localhost-published on `127.0.0.1:3000` for health
+checks/debugging; nginx reaches it by name on the compose network.
+
+## TLS certificates
+
+* Every server block serves the same **`pressabl`** certificate
+  (`env/letsencrypt/live/pressabl`). Before a real one is issued,
+  `gen-test-certs.sh` (test mode) or the deploy.sh bootstrap creates a
+  self-signed placeholder there — covering every configured domain in test
+  mode — so nginx always starts and every site still gets a (bypassable)
+  certificate.
+* The real cert is issued by `scripts/certbot-issue.sh`, driven by
+  `certbot/domains.txt` — one line = one certificate, `pressabl <all domains>`.
+  Test mode uses `certbot/domains.test.txt` (`pressabl
+  spam-destroyer.hellyer.kiwi`). Every listed domain must have DNS pointed at
+  this host before it can be issued.
+* **HSTS is sent in production only.** In test mode `render-config.sh` drops
+  the `Strict-Transport-Security` header, so browsers still let you proceed
+  past the self-signed fallback certs (HSTS errors are non-bypassable).
+
+## Scheduled jobs (automatic)
+
+No cron is needed — `scripts/deploy.sh` installs systemd timers on every
+install/deploy:
+
+| Job | Schedule | Runs |
+|---|---|---|
+| Nightly backup | daily 03:00 | `scripts/backup.sh` |
+| TLS renewal | 2×/day (renews only when <30 days left) | `scripts/certbot-issue.sh` |
+| Weekly image update | Sun 04:00 | `scripts/update.sh` |
+| Log rotation | hourly (caps per-site logs at 50M) | `logrotate /etc/logrotate-server-setup.conf` |
+| Gmail fetch | daily 02:00 | `scripts/getmail.sh` |
+| Laravel scheduler | every minute | `scripts/laravel-scheduler.sh` (`LARAVEL_SCHEDULER_SITES`) |
+| WordPress cron | every 10 minutes | `scripts/wp-cron.sh` (`WP_CRON_PATH`) |
+
+There is also one **service** (not a timer): a supervised Laravel queue worker per
+site in `QUEUE_WORKER_SITES`, written as `server-queue-worker-<site>.service`
+(`php artisan queue:work database`, `Restart=always`).
+
+Check them with `systemctl list-timers 'server-backup.timer' 'certbot-renew.timer' 'server-update.timer' 'server-logs.timer' 'server-getmail.timer' 'server-scheduler.timer' 'server-wpcron.timer'` and `systemctl list-units 'server-queue-worker-*.service'`.
+
+> **Off-site backups.** `scripts/backup.sh` writes dated, hardlinked
+> `rsync --link-dest` snapshots to the "pressabl-backups" Storage Box (u676107):
+> one chain per source under `$BACKUP_REMOTE_BASE/` — `www`, `tools`, `mariadbs`
+> (the MySQL dumps), `gmail` and `server-setup`. It also dumps every MariaDB
+> database (one gzipped file per DB) into `~/mariadbs` first. A source is
+> skipped if that day's snapshot already exists. Restore with
+> `scripts/restore.sh --from-backup [DATE] [source…]`.
+>
+> This is a **different box from the snapshot source**: the new server reads
+> site snapshots from `u513410` (`STORAGE_*`, the old server's box, read-only)
+> but writes its own backups to `u676107` (`BACKUP_*`). The two are deliberately
+> independent — `BACKUP_HOST` never falls back to `STORAGE_HOST`.
+>
+> Controls in `.env`: `BACKUP_ENABLED`, `BACKUP_USER/HOST/PORT/KEY`,
+> `BACKUP_REMOTE_BASE`, `BACKUP_WEEKLY_DAY`, and optional `BACKUP_KEEP_DAYS` /
+> `BACKUP_KEEP_MONTHLY` pruning. See [`BACKUP_PLAN.md`](BACKUP_PLAN.md) and
+> [`temp-backup/`](temp-backup/) (the legacy system it's modelled on).
