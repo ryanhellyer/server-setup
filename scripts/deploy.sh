@@ -240,6 +240,13 @@ fi
 echo "==> creating log directories referenced by the nginx config"
 ensure_nginx_log_dirs
 
+# ---- 6b. GoatCounter data dir ----
+# The stats.hellyer.kiwi vhost proxies to the goatcounter container
+# (compose.yaml), whose SQLite database lives here. It sits under ~/www so the
+# nightly backup snapshots it like any other site; create it up front so the
+# bind-mount source exists before `compose up`.
+mkdir -p "$WWW_ROOT/stats.hellyer.kiwi"
+
 # ---- 7. TEST MODE: temporary certs ----
 # Nothing here runs in production — set DEPLOY_ENV=production in .env and
 # this step is skipped automatically (no manual code removal needed).
@@ -254,10 +261,12 @@ echo "==> build nginx image (used for config validation)"
 IMAGE_ID="$(podman build -q ./nginx)"
 
 echo "==> nginx -t against the repo config"
-# --add-host: the config references upstreams by container name (open-webui),
-# which resolve on the compose network but not in this throwaway container.
+# --add-host: the config references upstreams by container name (open-webui,
+# goatcounter), which resolve on the compose network but not in this throwaway
+# container.
 podman run --rm \
   --add-host open-webui:127.0.0.1 \
+  --add-host goatcounter:127.0.0.1 \
   -v "$PWD/nginx:/etc/nginx:ro" \
   -v "$PWD/env/letsencrypt:/etc/letsencrypt:ro" \
   -v "$WWW_ROOT:/var/www" \

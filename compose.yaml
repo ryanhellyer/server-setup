@@ -30,6 +30,7 @@ services:
       - php
       - node
       - open-webui
+      - goatcounter
     networks: [web]
     restart: unless-stopped
 
@@ -81,6 +82,31 @@ services:
         limits:
           cpus: "1.0"
           memory: 1536m
+
+  # GoatCounter (stats.hellyer.kiwi) — self-hosted, privacy-friendly web
+  # analytics for every domain in stats-domain-list.txt. A single Go binary +
+  # SQLite (no separate database), proxied by nginx (nginx/conf.d/stats-site.conf).
+  # Its data lives under ~/www so the nightly backup snapshots it like a site.
+  #
+  # Runs as root (`user: "0:0"`): the image's own `goatcounter` user (Alpine uid
+  # 1000) would fight the ~/www ownership model (files are ryan:www-data, reset
+  # by fix-perms.sh), whereas root can always write into that tree — the same
+  # approach as the open-webui data dir.
+  goatcounter:
+    image: docker.io/arp242/goatcounter:2.7
+    container_name: goatcounter
+    user: "0:0"
+    environment:
+      GOATCOUNTER_LISTEN: ":8080"
+    volumes:
+      - ${WWW_ROOT:-/home/ryan/www}/stats.hellyer.kiwi:/home/goatcounter/goatcounter-data
+    networks: [web]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
 
   mariadb:
     image: docker.io/mariadb:11

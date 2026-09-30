@@ -12,6 +12,7 @@ block's maps (root, log path, etc.).
 | `conf.d/static-site.conf`      | chocolate, julia, stuff, mum, dad                                 |
 | `conf.d/static-spa.conf`       | comicjet.com, historic-wordpress.hellyer.kiwi                     |
 | `conf.d/node-proxy.conf`       | chat.hellyer.kiwi                                                 |
+| `conf.d/stats-site.conf`       | stats.hellyer.kiwi (self-hosted GoatCounter)                      |
 | `conf.d/redirects.conf`        | all 301-redirect domains                                          |
 | `conf.d/http-redirect.conf`    | port 80 (ACME challenge + https redirect for every domain)        |
 
