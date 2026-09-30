@@ -16,6 +16,21 @@
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+# The stack's containers are created by rootful podman (deploy.sh runs as root),
+# so `podman run` / `podman exec nginx` here must run as root too. Running as the
+# admin user fails with a confusing containers/storage error and, because the
+# wrapper interprets a failed `podman exec ... nginx -t` as a config error, it
+# looks like the certificate/reload failed when it was really podman.
+[ "$(id -u)" -eq 0 ] || { echo "Run as root (sudo ./scripts/certbot-issue.sh)."; exit 1; }
+
+# podman/containers-storage reads $HOME/.config and refuses to run when that
+# directory is not owned by the current user (common when a sudo run left a
+# root-owned ~/.config in the admin user's home). Pin a root-owned config home
+# so this script works regardless of an inherited $HOME.
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/root/.config}"
+mkdir -p "$XDG_CONFIG_HOME"
+
 source scripts/lib-containers.sh
 source scripts/lib-paths.sh
 source scripts/lib-nginx.sh
