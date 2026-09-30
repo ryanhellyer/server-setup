@@ -89,6 +89,9 @@ ExecStart=${COMPOSE[*]} -f $COMPOSE_FILE up -d
 ExecStop=${COMPOSE[*]} -f $COMPOSE_FILE down
 TimeoutStartSec=600
 TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
