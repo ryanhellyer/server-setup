@@ -3,10 +3,14 @@
 # install-systemd.sh — make the compose-managed containers start at boot and be
 # supervised by systemd. Run as root; deploy.sh calls it automatically.
 #
-# For each container it generates a `container-<name>.service` with
-# `podman generate systemd` (start/stop the EXISTING container, so it stays
-# compatible with compose, which remains the source of truth), enables it, and
-# adds ordering so nginx starts after the FPM socket provider (php-fpm).
+# Supervision is a single `server-stack.service` that wraps
+# `podman compose up -d` / `down` for the whole stack, so compose stays the
+# source of truth and the containers' own `restart:` policies handle crashes.
+# Older installs generated one `container-<name>.service` per container with the
+# deprecated `podman generate systemd`. Those units were Type=forking and pinned
+# each container's ID in PIDFile=, so they broke every time compose recreated a
+# container (new ID) — systemd would then kill and restart it every ~90s. This
+# script now removes any such units it finds.
 #
 # It also installs systemd timers for the scheduled jobs: `server-backup.timer`
 # (nightly 03:00), `certbot-renew.timer` (2x/day), `server-update.timer`
@@ -30,60 +34,71 @@ command -v systemctl >/dev/null 2>&1 || { echo "systemd not present — skipping
 CONTAINERS=("${ALL_CONTAINERS[@]}")
 
 SYSTEMD_DIR=/etc/systemd/system
+STACK_UNIT="server-stack.service"
 
-# Ensure the stack is up so units can be generated from live containers.
+# Resolve the compose command once. `podman compose` delegates to the external
+# provider (podman-compose); fall back to the standalone binary if needed.
 if podman compose version >/dev/null 2>&1; then
-  podman compose up -d
+  COMPOSE=(/usr/bin/podman compose)
 else
-  podman-compose up -d
+  COMPOSE=("$(command -v podman-compose)")
+fi
+COMPOSE_FILE="$PWD/compose.yaml"
+
+# ---- remove the obsolete per-container units ---------------------------------
+# Older installs generated container-<name>.service with
+# `podman generate systemd --name`. Those units are Type=forking and pin the
+# container's ID in PIDFile=, so they start killing the container at the 90s
+# start timeout as soon as compose recreates it under a new ID. Delete them (and
+# any .d/ overrides) so only the single stack unit below supervises the stack.
+for c in "${CONTAINERS[@]}"; do
+  old="container-$c.service"
+  if [ -e "$SYSTEMD_DIR/$old" ] || [ -d "$SYSTEMD_DIR/$old.d" ]; then
+    echo "==> Removing obsolete $old"
+    systemctl disable --now "$old" >/dev/null 2>&1 || true
+    rm -f "$SYSTEMD_DIR/$old"
+    rm -rf "$SYSTEMD_DIR/$old.d"
+  fi
+done
+# Drop a leftover all-in-one unit from the pre-per-container setup, if present.
+old="podman-compose@server-setup.service"
+if [ -e "$SYSTEMD_DIR/$old" ]; then
+  echo "==> Removing obsolete $old"
+  systemctl disable --now "$old" >/dev/null 2>&1 || true
+  rm -f "$SYSTEMD_DIR/$old"
 fi
 
-for c in "${CONTAINERS[@]}"; do
-  if ! podman container exists "$c" 2>/dev/null; then
-    echo "  (container '$c' not running yet — skipping its unit; re-run after compose up)"
-    continue
-  fi
-  echo "==> Generating systemd unit for $c"
-  # Note: `--files` writes to the CURRENT directory, not to $SYSTEMD_DIR, so
-  # the unit must be redirected explicitly or `systemctl enable` below fails.
-  podman generate systemd --name "$c" > "$SYSTEMD_DIR/container-$c.service"
-done
-
-# nginx depends on the shared FPM socket: start it after php-fpm/node.
-OVERRIDE="$SYSTEMD_DIR/container-$CONTAINER_NGINX.service.d/order.conf"
-mkdir -p "$(dirname "$OVERRIDE")"
-cat > "$OVERRIDE" <<EOF
+# ---- single stack supervisor unit --------------------------------------------
+# `up -d` at boot, `down` on stop. The containers' own `restart:` policies keep
+# the individual services alive, so systemd only has to bring the stack up once.
+# compose honours depends_on, so no per-container ordering is needed.
+echo "==> Writing $STACK_UNIT"
+cat > "$SYSTEMD_DIR/$STACK_UNIT" <<EOF
 [Unit]
-After=container-$CONTAINER_PHP_FPM.service container-$CONTAINER_NODE.service container-$CONTAINER_OPENWEBUI.service
-Wants=container-$CONTAINER_PHP_FPM.service container-$CONTAINER_NODE.service container-$CONTAINER_OPENWEBUI.service
-EOF
-
-# open-webui: cap CPU/memory and bound crash restarts, so a broken app (e.g. a
-# corrupt SQLite DB) can't peg a core or restart forever. Its compose service
-# deliberately has no podman restart policy, so systemd is the sole supervisor.
-OPENWEBUI_OVERRIDE="$SYSTEMD_DIR/container-$CONTAINER_OPENWEBUI.service.d/limits.conf"
-mkdir -p "$(dirname "$OPENWEBUI_OVERRIDE")"
-cat > "$OPENWEBUI_OVERRIDE" <<EOF
-[Unit]
-StartLimitIntervalSec=300
-StartLimitBurst=5
+Description=server-setup container stack (podman compose)
+Documentation=man:podman-compose(1)
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/run/containers/storage
 
 [Service]
-Restart=on-failure
-CPUQuota=100%
-MemoryMax=1536M
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=$PWD
+ExecStart=${COMPOSE[*]} -f $COMPOSE_FILE up -d
+ExecStop=${COMPOSE[*]} -f $COMPOSE_FILE down
+TimeoutStartSec=600
+TimeoutStopSec=120
 EOF
 
 systemctl daemon-reload
-
 for c in "${CONTAINERS[@]}"; do
-  if ! podman container exists "$c" 2>/dev/null; then
-    continue
-  fi
-  echo "==> Enabling container-$c.service"
-  systemctl enable "container-$c.service" >/dev/null 2>&1
-  systemctl start "container-$c.service" 2>/dev/null || true
+  systemctl reset-failed "container-$c.service" >/dev/null 2>&1 || true
 done
+systemctl reset-failed "$STACK_UNIT" >/dev/null 2>&1 || true
+
+echo "==> Enabling $STACK_UNIT"
+systemctl enable --now "$STACK_UNIT"
 
 # ---- per-site log rotation ----
 # Per-site nginx logs live under $LOG_ROOT (~/logs), outside the web roots, so
@@ -109,6 +124,10 @@ $LOG_ROOT/*/*.log {
     delaycompress
     missingok
     notifempty
+    # The per-site log dirs under $LOG_ROOT are group-writable (the containers
+    # write there), which logrotate refuses to touch unless told which user to
+    # rotate as. Root can rotate them regardless of the directory mode.
+    su root root
     create 0644
     sharedscripts
     postrotate
@@ -226,8 +245,8 @@ for site in $QUEUE_SITES; do
   cat > "$SYSTEMD_DIR/$unit" <<EOF
 [Unit]
 Description=server-setup Laravel queue worker ($dir)
-After=container-$CONTAINER_PHP_FPM.service container-$CONTAINER_MARIADB.service
-Wants=container-$CONTAINER_PHP_FPM.service container-$CONTAINER_MARIADB.service
+After=$STACK_UNIT
+Wants=$STACK_UNIT
 
 [Service]
 Type=simple
@@ -253,7 +272,7 @@ done
 
 echo
 echo "Systemd units installed and enabled. The stack will start at boot:"
-echo "  systemctl list-units 'container-*.service'"
+echo "  systemctl status $STACK_UNIT"
 echo "Scheduled jobs (timers):"
 echo "  systemctl list-timers 'server-backup.timer' 'certbot-renew.timer' 'server-update.timer' 'server-logs.timer' 'server-getmail.timer' 'server-scheduler.timer' 'server-wpcron.timer'"
 [ -n "$QUEUE_SITES" ] && echo "Queue workers (services): systemctl list-units 'server-queue-worker-*.service'"

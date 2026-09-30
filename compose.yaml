@@ -72,10 +72,10 @@ services:
     ports:
       - "127.0.0.1:3000:8080"   # localhost only; nginx proxies via the web network
     networks: [web]
-    # NO podman restart policy (deliberate): systemd supervises this unit
-    # (Restart=on-failure with a StartLimit, see install-systemd.sh), so a
-    # crash-looping app — e.g. a corrupt SQLite DB — can't restart forever and
-    # peg a CPU. Resource limits stop it starving the rest of the stack.
+    # Restarted by compose (`restart: unless-stopped`) like the rest of the
+    # stack. The CPU/memory limits below stop a crash-looping app — e.g. a
+    # corrupt SQLite DB — from starving the rest of the stack.
+    restart: unless-stopped
     deploy:
       resources:
         limits:
