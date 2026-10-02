@@ -80,7 +80,7 @@ PLAN = {
   # Standalone Authelia-protected blocks: no shared file/map/marker — a new
   # conf.d/<domain>.conf is generated instead. Mode is signalled by map_name=None
   # plus the special marker strings below.
-  "static-auth": ("conf.d/%s.conf" % domain,     None,               "/var/www/%s/public_html" % domain,  "@standalone-static",    False),
+  "static-auth": ("conf.d/%s.conf" % domain,     None,               "/var/www/%s/public" % domain,       "@standalone-static",    False),
   "php-auth":    ("conf.d/%s.conf" % domain,     None,               "/var/www/%s/public" % domain,       "@standalone-php",       False),
 }
 if stype not in PLAN:
@@ -96,7 +96,7 @@ if STANDALONE:
     # Generate a whole new server block, protected by Authelia. Mirrors the
     # health-site.conf (php) / storage-site.conf (static) shapes.
     titles = {
-      "@standalone-static": ("static file site", "public_html", "autoindex on;",
+      "@standalone-static": ("static file site", "public", "autoindex on;",
                              'try_files $uri $uri/ =404;', 'index index.html index.php;'),
       "@standalone-php":    ("PHP site", "public", "",
                              'try_files $uri $uri/ /index.php?$args;', 'index index.php index.html;'),
@@ -233,7 +233,8 @@ PY
 # ---- 2. Create web root + logs (host paths; config uses /var/www + /var/log/sites) ----
 case "$TYPE" in
   laravel|static|php-auth)  ROOT="$WWW_ROOT/$DOMAIN/public" ;;
-  static-spa|static-auth)   ROOT="$WWW_ROOT/$DOMAIN/public_html" ;;
+  static-spa)               ROOT="$WWW_ROOT/$DOMAIN/public_html" ;;
+  static-auth)              ROOT="$WWW_ROOT/$DOMAIN/public" ;;
   *)                        ROOT="" ;;
 esac
 if [ -n "$ROOT" ]; then
