@@ -240,14 +240,24 @@ if [ "${SETUP_NO_REFRESH:-0}" != "1" ]; then
       || say "!! git pull failed (local edits?) — using the files already here"
   else
     say "Existing install — updating files from GitHub"
-    install_repo_files "$REPO_DIR" \
-      || say "!! file refresh failed — using the files already here"
+    if ! install_repo_files "$REPO_DIR"; then
+      warn "!! file refresh FAILED — the scripts here may be STALE."
+      warn "   (Common cause: a stale .last-sha short-circuits the download.)"
+      warn "   Force it:  rm -f .last-sha   then re-run this installer."
+    fi
   fi
   # A sudo/root refresh leaves root-owned files; keep them owned by the admin
   # user when the repo lives directly under their home.
   ADMIN_HOME="$(getent passwd "$ADMIN_USER" | cut -d: -f6)"
   if [ -n "$ADMIN_HOME" ] && [ "$(dirname "$REPO_DIR")" = "$ADMIN_HOME" ]; then
     chown -R "$ADMIN_USER:$(id -gn "$ADMIN_USER")" "$REPO_DIR" 2>/dev/null || true
+  fi
+  # If Authelia was just added and its admin password isn't set yet, point the
+  # operator at the one command needed to finish enabling it.
+  if [ -f "$REPO_DIR/scripts/provision-authelia.sh" ] \
+     && ! grep -qE '^AUTHELIA_ADMIN_PASSWORD=.+' "$REPO_DIR/.env" 2>/dev/null; then
+    say "Authelia is available but not yet enabled."
+    say "  Set AUTHELIA_ADMIN_PASSWORD in .env, then: sudo bash scripts/provision-authelia.sh"
   fi
 fi
 
@@ -271,12 +281,12 @@ show_menu() {
 add_site() {
   local domain type target
   echo
-  echo "Site types: laravel | wordpress | static | static-spa | redirect | node"
+  echo "Site types: laravel | wordpress | static | static-spa | redirect | node | node-auth"
   printf 'Domain: '; tty_read domain
   [ -n "$domain" ] || { echo "Domain required."; return 1; }
   printf 'Type:   '; tty_read type
   case "$type" in
-    laravel|wordpress|static|static-spa|redirect|node) ;;
+    laravel|wordpress|static|static-spa|redirect|node|node-auth) ;;
     *) echo "Unknown type: $type"; return 1 ;;
   esac
   if [ "$type" = "redirect" ]; then

@@ -141,11 +141,25 @@ if [ "$DO_HASH" = 1 ]; then
     HASH="$(hash_digest "$AUTHELIA_IMAGE" authelia crypto hash generate argon2 --password "$AUTHELIA_ADMIN_PASSWORD")"
     case "$HASH" in
       \$argon2*) : ;;
-      *) HASH="$(hash_digest -i "$AUTHELIA_IMAGE" authelia hash-password)" ;;
+      *)
+        warn "The primary hash command returned no digest — retrying with the legacy interface."
+        HASH="$(hash_digest -i "$AUTHELIA_IMAGE" authelia hash-password)"
+        ;;
     esac
     case "$HASH" in
       \$argon2*) : ;;
-      *) die "Could not hash the password (got '$HASH'). Is the image pullable? Try: podman pull $AUTHELIA_IMAGE" ;;
+      *)
+        # A bare version string here is the signature of an OLD copy of this
+        # script that parsed the wrong line. Detect it to save a confusing debug.
+        if printf '%s' "$HASH" | grep -qE '^v?[0-9]+\.[0-9]+'; then
+          die "Got a version string ('$HASH') instead of a hash — this script is STALE.
+     Update it, then re-run:
+       cd ~/server-setup && rm -f .last-sha
+       sudo env SERVER_SETUP_ADMIN_USER=ryan bash <(curl -fsSL https://raw.githubusercontent.com/ryanhellyer/server-setup/master/install/setup.sh)
+     (or: git pull). Then: sudo scripts/provision-authelia.sh"
+        fi
+        die "Could not hash the password (got '$HASH'). Is the image pullable? Try: podman pull $AUTHELIA_IMAGE"
+        ;;
     esac
   fi
 fi
