@@ -113,6 +113,30 @@ PY
   chmod 600 .env
   echo "==> Created .env from .env.example (generated MARIADB_ROOT_PASSWORD)"
 fi
+# Authelia needs three 64-char secrets (session, storage encryption, reset-
+# password JWT). Generate them once into .env if absent — same approach as the
+# MariaDB root password. They are rendered into the container as AUTHELIA_* env
+# vars by compose.yaml, never committed (.env is gitignored).
+for _var in AUTHELIA_SESSION_SECRET AUTHELIA_STORAGE_ENCRYPTION_KEY \
+            AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET; do
+  if ! grep -q "^${_var}=." .env; then
+    if grep -q "^${_var}=" .env; then
+      _val="$(openssl rand -hex 32)"
+      python3 - .env "$_var" "$_val" <<'PY'
+import sys
+path, key, val = sys.argv[1], sys.argv[2], sys.argv[3]
+lines = open(path).read().splitlines()
+for i, ln in enumerate(lines):
+    if ln.startswith(key + "="):
+        lines[i] = f"{key}={val}"
+open(path, "w").write("\n".join(lines) + "\n")
+PY
+    else
+      printf '%s=%s\n' "$_var" "$(openssl rand -hex 32)" >> .env
+    fi
+    echo "==> Generated $_var in .env"
+  fi
+done
 # shellcheck disable=SC1091
 set -a && . ./.env && set +a
 DEPLOY_ENV="${DEPLOY_ENV:-test}"
@@ -247,6 +271,16 @@ ensure_nginx_log_dirs
 # bind-mount source exists before `compose up`.
 mkdir -p "$WWW_ROOT/stats.hellyer.kiwi"
 
+# ---- 6c. Authelia data dir ----
+# The authelia container's SQLite DB, generated user database and filesystem
+# notifier live here (compose.yaml bind-mounts it at /data). Under ~/www so the
+# nightly backup snapshots it; create it up front so the bind-mount source
+# exists before `compose up`. Named after the portal domain, matching the
+# chat/stats convention. This is DATA only — the portal vhost is a proxy and
+# has no nginx root. (provision-authelia.sh also creates it, so a standalone
+# run of that script is sufficient when not doing a full deploy.)
+mkdir -p "$WWW_ROOT/auth.hellyer.kiwi"
+
 # ---- 7. TEST MODE: temporary certs ----
 # Nothing here runs in production — set DEPLOY_ENV=production in .env and
 # this step is skipped automatically (no manual code removal needed).
@@ -262,11 +296,12 @@ IMAGE_ID="$(podman build -q ./nginx)"
 
 echo "==> nginx -t against the repo config"
 # --add-host: the config references upstreams by container name (open-webui,
-# goatcounter), which resolve on the compose network but not in this throwaway
-# container.
+# goatcounter, authelia), which resolve on the compose network but not in this
+# throwaway container.
 podman run --rm \
   --add-host open-webui:127.0.0.1 \
   --add-host goatcounter:127.0.0.1 \
+  --add-host authelia:127.0.0.1 \
   -v "$PWD/nginx:/etc/nginx:ro" \
   -v "$PWD/env/letsencrypt:/etc/letsencrypt:ro" \
   -v "$WWW_ROOT:/var/www" \

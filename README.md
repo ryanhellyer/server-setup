@@ -419,7 +419,8 @@ Flags: `--files-only`, `--db-only`, `--dry-run`.
 site. It's part of `compose.yaml` (service `open-webui`, data at
 `~/www/chat.hellyer.kiwi:/app/backend/data`), and nginx proxies to it over the
 `web` network (`nginx/conf.d/node-proxy.conf` → upstream `open-webui:8080`,
-with WebSocket + long-timeout settings).
+with WebSocket + long-timeout settings). The vhost is behind **Authelia**
+(see below).
 
 Restore/refresh its data from the storage box (newest dated snapshot):
 
@@ -438,6 +439,59 @@ Notes: `vector_db/` is kept by default because the container path
 (`/app/backend/data`) is stable; use `--drop-vector-db` if RAG/embeddings
 misbehave. The container is localhost-published on `127.0.0.1:3000` for health
 checks/debugging; nginx reaches it by name on the compose network.
+
+## Authelia (forward-auth / SSO)
+
+**Authelia** gates access to protected vhosts. `chat.hellyer.kiwi` is protected
+today; the gate is reusable for future sites/pages.
+
+* Container: `compose.yaml` service `authelia`, config in `authelia/`, data
+  (SQLite DB + user database + notifier) at `~/www/auth.hellyer.kiwi:/data` so
+  the nightly `~/www` snapshot backs it up. Sessions live in the existing
+  `valkey` container. **This is a data dir, not a site root** — the portal is a
+  proxy vhost (`proxy_pass` to the container), so nginx has no `root` for it
+  and no other per-domain files appear under `~/www/auth.hellyer.kiwi`.
+* Portal: `auth.hellyer.kiwi` (`nginx/conf.d/auth-site.conf`), on the shared
+  `pressabl` TLS cert.
+* nginx asks Authelia per-request via `auth_request`
+  (`nginx/snippets/authelia-authz-location.conf` + `authelia-authrequest.conf`);
+  unauthenticated visitors get a 302 to the portal.
+* Secrets (`AUTHELIA_SESSION_SECRET`, `AUTHELIA_STORAGE_ENCRYPTION_KEY`,
+  `AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET`) are generated into
+  `.env` by `deploy.sh` on first run.
+
+### Standalone setup (no full deploy)
+
+`deploy.sh` is destructive (it re-imports every site + DB from the snapshot), so
+you do **not** need it just to add Authelia. On a box that already has the stack
+and `.env`:
+
+```bash
+# 1. add to .env: AUTHELIA_ADMIN_USER / _EMAIL / _PASSWORD
+#    (the three AUTHELIA_* secrets must also be present — see .env.example)
+# 2. create the data dir + user database and start the container:
+sudo bash scripts/provision-authelia.sh
+# 3. bring up / restart nginx so it picks up auth-site.conf + the snippets:
+sudo podman compose up -d nginx      # or: podman compose up -d --build
+# 4. portal TLS + DNS: point auth.hellyer.kiwi at this host, then
+sudo bash scripts/certbot-issue.sh
+```
+
+`provision-authelia.sh` creates `~/www/auth.hellyer.kiwi` itself (it does not
+depend on `deploy.sh`). Re-running it is safe: it re-hashes the password and
+restarts the container.
+
+Create the first user (hashes `AUTHELIA_ADMIN_PASSWORD` from `.env`):
+
+```bash
+# set AUTHELIA_ADMIN_USER / _EMAIL / _PASSWORD in .env, then:
+sudo bash scripts/provision-authelia.sh
+sudo podman logs authelia            # if it does not come up
+```
+
+To protect another vhost, add the two snippet includes to its server block (or
+just its `location` for a single page) and add the host to
+`access_control.rules` in `authelia/configuration.yml`, then restart authelia.
 
 ## TLS certificates
 

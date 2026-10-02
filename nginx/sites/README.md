@@ -11,10 +11,30 @@ block's maps (root, log path, etc.).
 | `conf.d/secure-site.conf`      | secure.hellyer.kiwi                                               |
 | `conf.d/static-site.conf`      | chocolate, julia, stuff, mum, dad                                 |
 | `conf.d/static-spa.conf`       | comicjet.com, historic-wordpress.hellyer.kiwi                     |
-| `conf.d/node-proxy.conf`       | chat.hellyer.kiwi                                                 |
+| `conf.d/node-proxy.conf`       | chat.hellyer.kiwi (behind Authelia)                               |
+| `conf.d/auth-site.conf`        | auth.hellyer.kiwi (Authelia login portal)                         |
 | `conf.d/stats-site.conf`       | stats.hellyer.kiwi (self-hosted GoatCounter)                      |
 | `conf.d/redirects.conf`        | all 301-redirect domains                                          |
 | `conf.d/http-redirect.conf`    | port 80 (ACME challenge + https redirect for every domain)        |
+
+## Authelia (forward-auth / SSO)
+
+Protected vhosts sit behind [Authelia](https://www.authelia.com). nginx asks it
+about each request with `auth_request`; unauthenticated visitors are redirected
+to the portal (`auth.hellyer.kiwi`). The gate is reusable:
+
+* To protect a **whole vhost**, add both includes to its server block:
+  ```nginx
+  include /etc/nginx/snippets/authelia-authz-location.conf;   # once per block
+  include /etc/nginx/snippets/authelia-authrequest.conf;      # at server level
+  ```
+* To protect **one path/page**, add the authz include once (server level) and
+  put `authelia-authrequest.conf` inside that `location` instead.
+
+Then allow the host in `authelia/configuration.yml` (`access_control.rules`)
+and restart Authelia. The user database/config/DB live under
+`~/www/auth.hellyer.kiwi` (snapshot-backed; a data dir, not a site root); see
+`scripts/provision-authelia.sh`.
 
 ## Adding a site
 

@@ -12,6 +12,9 @@
 #     redirect   -> joined redirects.conf block (needs target, e.g.
 #                   https://destination.example$request_uri)
 #     node       -> node-proxy.conf block (chat-style Node app)
+#     node-auth  -> node-proxy.conf block, protected by Authelia forward-auth
+#                   (like chat.hellyer.kiwi; remember to add the host to the
+#                   access_control rule in authelia/configuration.yml)
 #
 # What it does:
 #   1. Adds the domain to the right map + server_name list in conf.d/.
@@ -31,8 +34,10 @@ LOG_ROOT="$(resolve_log_root)"
 
 usage() {
   echo "Usage: $0 <domain> <type> [target]"
-  echo "  type: laravel | wordpress | static | static-spa | redirect | node"
+  echo "  type: laravel | wordpress | static | static-spa | redirect | node | node-auth"
   echo "  target: required for redirect, e.g. 'https://example.com\$request_uri'"
+  echo "  node-auth: adds the host to node-proxy.conf behind Authelia — also add"
+  echo "             it to access_control in authelia/configuration.yml."
   exit 1
 }
 
@@ -64,6 +69,7 @@ PLAN = {
   "static-spa":("conf.d/static-spa.conf",        "spa_root",         "/var/www/%s/public_html" % domain,  "static-spa domains",    False),
   "redirect":  ("conf.d/redirects.conf",         "redirect_target",  None,                                 "redirect domains",      True),
   "node":      ("conf.d/node-proxy.conf",        None,               None,                                 "node-proxy domains",    False),
+  "node-auth": ("conf.d/node-proxy.conf",        None,               None,                                 "node-proxy domains",    False),
 }
 if stype not in PLAN:
     sys.exit("Unknown type: %s" % stype)
@@ -174,6 +180,14 @@ fi
 
 echo
 echo "Site added: $DOMAIN ($TYPE)"
-echo "Next steps:"
+if [ "$TYPE" = "node-auth" ]; then
+  echo "Protected by Authelia — next steps:"
+  echo "  - add '$DOMAIN' to the access_control rule in authelia/configuration.yml"
+  echo "    (e.g. policy: two_factor) and restart: sudo podman restart authelia"
+  echo "  - migrate the data dir / upstream (see nginx/conf.d/node-proxy.conf +"
+  echo "    scripts/provision-openwebui.sh as the template)"
+else
+  echo "Next steps:"
+fi
 echo "  - sudo ./scripts/certbot-issue.sh   (add the domain to certbot/domains.txt if new)"
 echo "  - point DNS at this host, then reload nginx."
