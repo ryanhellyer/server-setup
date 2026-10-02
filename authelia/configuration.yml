@@ -76,7 +76,7 @@ access_control:
   default_policy: 'deny'
   rules:
     - domain: 'chat.hellyer.kiwi'
-      policy: 'one_factor'
+      policy: 'two_factor'
 
 session:
   name: 'authelia_session'
