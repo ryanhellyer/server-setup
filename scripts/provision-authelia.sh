@@ -120,6 +120,28 @@ fi
 say "Ensuring data dir $DATA_DIR"
 run mkdir -p "$DATA_DIR"
 
+# ---- 1b. sync portal theme assets ------------------------------------------
+# Authelia 4.39 has no custom-CSS hook, so nginx injects /themes/rh-theme.css
+# (see nginx/conf.d/auth-site.conf) and serves it from $DATA_DIR/themes. The
+# logo.png / favicon.ico are read by Authelia directly from the mounted
+# ./authelia/assets (server.asset_path = /config/assets) and need no copy.
+SITE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ASSETS_DIR="$SITE_DIR/authelia/assets"
+say "Syncing portal theme assets to $DATA_DIR/themes"
+if [ "$DRY" = 1 ]; then
+  echo "    DRY: cp -r $ASSETS_DIR/{theme.css,fonts} $DATA_DIR/themes/"
+else
+  run mkdir -p "$DATA_DIR/themes"
+  run cp -f "$ASSETS_DIR/theme.css" "$DATA_DIR/themes/rh-theme.css"
+  run cp -rf "$ASSETS_DIR/fonts" "$DATA_DIR/themes/"
+  # nginx (www-data, uid 33) serves these, so use the shared-hosting model:
+  # owner ryan:www-data, dirs 2775, files 664 (see scripts/fix-perms.sh).
+  run chown -R "$ADMIN_USER_RESOLVED:www-data" "$DATA_DIR/themes" 2>/dev/null || true
+  run find "$DATA_DIR/themes" -type d -exec chmod 2775 {} + 2>/dev/null || true
+  run find "$DATA_DIR/themes" -type f -exec chmod 664 {} + 2>/dev/null || true
+  ok "Theme assets in place (rh-theme.css + fonts)."
+fi
+
 HASH="$AUTHELIA_ADMIN_PASSWORD"
 if [ "$DO_HASH" = 1 ]; then
   say "Hashing the admin password with the Authelia binary"

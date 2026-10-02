@@ -1,0 +1,258 @@
+/* =============================================================================
+ * Authelia login portal theme — matches https://ryan.hellyer.kiwi
+ *
+ * Authelia 4.39 ships no custom-CSS hook, so this file is injected by nginx
+ * (sub_filter in nginx/conf.d/auth-site.conf) and served same-origin from
+ * /themes/rh-theme.css. It overrides MUI's CSS custom properties and the stable
+ * `.Mui*` component classes. Same-origin means no CSP weakening is required.
+ *
+ * Palette / type lifted from the site's own style.css:
+ *   accent #fc364d  accent-shadow #b8273a
+ *   primary #d32f3f primary-shadow #a81d2b
+ *   ink #18181b  body #3f3f46  muted #a1a1aa
+ *   line #e4e4e7 panel #fafafa
+ *
+ * `theme: auto` is kept, so both light and dark are styled via
+ * [data-mui-color-scheme] / prefers-color-scheme.
+ * ========================================================================== */
+
+@font-face {
+	font-family: "Outfit";
+	font-style: normal;
+	font-weight: 300 700;
+	font-display: swap;
+	src: url("/themes/fonts/outfit.woff2") format("woff2");
+}
+
+/* ---------------------------------------------------------------------------
+ * Palette tokens
+ * ------------------------------------------------------------------------ */
+:root {
+	--rh-accent: #fc364d;
+	--rh-accent-shadow: #b8273a;
+	--rh-primary: #d32f3f;
+	--rh-primary-shadow: #a81d2b;
+
+	--rh-ink: #18181b;
+	--rh-body: #3f3f46;
+	--rh-muted: #a1a1aa;
+	--rh-line: #e4e4e7;
+	--rh-panel: #fafafa;
+	--rh-surface: #ffffff;
+
+	--rh-radius-pill: 99rem;
+	--rh-radius-field: 0.75rem;
+	--rh-radius-card: 1.5rem;
+}
+
+/* Light scheme — override MUI palette custom properties */
+[data-mui-color-scheme="light"],
+.MuiCssBaseline-root {
+	--mui-palette-primary-main: var(--rh-primary);
+	--mui-palette-primary-dark: var(--rh-primary-shadow);
+	--mui-palette-primary-light: #e05a67;
+	--mui-palette-primary-contrastText: #ffffff;
+	--mui-palette-error-main: var(--rh-accent);
+	--mui-palette-error-dark: var(--rh-accent-shadow);
+	--mui-palette-background-paper: var(--rh-surface);
+	--mui-palette-background-default: var(--rh-panel);
+	--mui-palette-text-primary: var(--rh-ink);
+	--mui-palette-text-secondary: var(--rh-body);
+	--mui-palette-divider: var(--rh-line);
+}
+
+/* Dark scheme */
+[data-mui-color-scheme="dark"] {
+	--rh-ink: #fafafa;
+	--rh-body: #d4d4d8;
+	--rh-muted: #a1a1aa;
+	--rh-line: #3f3f46;
+	--rh-panel: #27272a;
+	--rh-surface: #18181b;
+
+	--mui-palette-primary-main: var(--rh-accent);
+	--mui-palette-primary-dark: var(--rh-accent-shadow);
+	--mui-palette-primary-light: #ff5c6e;
+	--mui-palette-primary-contrastText: #ffffff;
+	--mui-palette-error-main: var(--rh-accent);
+	--mui-palette-background-paper: var(--rh-surface);
+	--mui-palette-background-default: var(--rh-panel);
+	--mui-palette-text-primary: var(--rh-ink);
+	--mui-palette-text-secondary: var(--rh-body);
+	--mui-palette-divider: var(--rh-line);
+}
+
+/* ---------------------------------------------------------------------------
+ * Typography — force Outfit everywhere
+ * ------------------------------------------------------------------------ */
+html,
+body,
+button,
+input,
+select,
+textarea,
+.MuiTypography-root,
+.MuiButton-root,
+.MuiInputBase-root,
+.MuiFormLabel-root {
+	font-family: "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body,
+.MuiCssBaseline-root {
+	background-color: var(--rh-panel);
+	color: var(--rh-body);
+}
+
+.MuiTypography-h1,
+.MuiTypography-h2,
+.MuiTypography-h3,
+.MuiTypography-h4,
+.MuiTypography-h5,
+.MuiTypography-h6 {
+	font-weight: 700;
+	letter-spacing: -0.01em;
+	color: var(--rh-ink);
+}
+
+/* ---------------------------------------------------------------------------
+ * Paper / card — rounded corners like the site's cards
+ * ------------------------------------------------------------------------ */
+.MuiPaper-root {
+	border-radius: var(--rh-radius-card);
+}
+
+.MuiPaper-elevation1,
+.MuiPaper-elevation2 {
+	box-shadow: 0 8px 25px -8px rgba(24, 24, 27, 0.12);
+}
+
+/* ---------------------------------------------------------------------------
+ * Buttons — pill shaped
+ * ------------------------------------------------------------------------ */
+.MuiButton-root {
+	border-radius: var(--rh-radius-pill) !important;
+	text-transform: none !important;
+	font-weight: 600;
+	padding: 0.6rem 2rem;
+	box-shadow: none;
+}
+
+.MuiButton-contained {
+	background-color: var(--rh-primary) !important;
+	color: #ffffff !important;
+	border: 2px solid var(--rh-primary);
+}
+
+.MuiButton-contained:hover {
+	background-color: #ffffff !important;
+	color: var(--rh-primary) !important;
+	border-color: var(--rh-primary);
+	box-shadow: none;
+}
+
+[data-mui-color-scheme="dark"] .MuiButton-contained:hover {
+	background-color: var(--rh-surface) !important;
+	color: var(--rh-accent) !important;
+	border-color: var(--rh-accent);
+}
+
+.MuiButton-outlined {
+	border: 1px solid var(--rh-primary);
+	color: var(--rh-primary) !important;
+}
+
+.MuiButton-outlined:hover {
+	background-color: var(--rh-primary) !important;
+	color: #ffffff !important;
+	border-color: var(--rh-primary);
+}
+
+.MuiButton-text {
+	color: var(--rh-primary);
+}
+
+.MuiButton-text:hover {
+	background-color: rgba(211, 47, 63, 0.08);
+}
+
+/* ---------------------------------------------------------------------------
+ * Inputs — soft rounded fields, brand focus ring
+ * ------------------------------------------------------------------------ */
+.MuiInputBase-root,
+.MuiOutlinedInput-root {
+	border-radius: var(--rh-radius-field);
+	background-color: var(--rh-panel);
+	transition: background-color 0.3s, box-shadow 0.3s;
+}
+
+.MuiInputBase-input,
+.MuiOutlinedInput-input {
+	color: var(--rh-ink) !important;
+}
+
+.MuiOutlinedInput-root .MuiOutlinedInput-notchedOutline {
+	border-color: var(--rh-line);
+}
+
+.MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
+	border-color: var(--rh-muted);
+}
+
+.MuiOutlinedInput-root.Mui-focused {
+	background-color: var(--rh-surface);
+}
+
+.MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+	border-color: var(--rh-primary);
+	border-width: 1px;
+	box-shadow: 0 0 0 3px rgba(211, 47, 63, 0.15);
+}
+
+.MuiFormLabel-root.Mui-focused {
+	color: var(--rh-primary);
+}
+
+.MuiFormHelperText-root.Mui-error {
+	color: var(--rh-accent-shadow);
+}
+
+/* ---------------------------------------------------------------------------
+ * Links, notices, tables
+ * ------------------------------------------------------------------------ */
+.MuiLink-root {
+	color: var(--rh-primary) !important;
+}
+
+.MuiLink-root:hover {
+	color: var(--rh-primary-shadow) !important;
+}
+
+.MuiAlert-standardError,
+.MuiAlert-filledError {
+	border-radius: var(--rh-radius-field);
+}
+
+.MuiTable-root {
+	border-radius: var(--rh-radius-field);
+	overflow: hidden;
+}
+
+.MuiTableCell-head {
+	font-weight: 700;
+	color: var(--rh-ink);
+}
+
+/* Authelia's top-of-card accent bar (invalid login) */
+.MuiLinearProgress-bar {
+	background-color: var(--rh-accent);
+}
+
+/* Logo sizing (asset override supplies logo.png) */
+img[alt="Authelia"],
+img[alt="authelia"],
+#logo,
+.logo {
+	border-radius: 50%;
+	box-shadow: 0 12px 28px -12px rgba(24, 24, 27, 0.35);
+}

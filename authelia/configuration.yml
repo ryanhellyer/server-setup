@@ -32,6 +32,11 @@ server:
   enable_pprof: false
   enable_expvars: false
   disable_healthcheck: false
+  # Brand the portal: override the built-in logo.png and favicon.ico. Authelia
+  # 4.39 supports ONLY these two image overrides (plus locale JSON) — there is
+  # no custom-CSS hook, so theme.css is injected by nginx instead
+  # (nginx/conf.d/auth-site.conf) and served same-origin from /themes/.
+  asset_path: '/config/assets'
   endpoints:
     authz:
       # nginx's auth_request uses the AuthRequest implementation.

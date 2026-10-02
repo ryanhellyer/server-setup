@@ -496,6 +496,33 @@ To protect another vhost, add the two snippet includes to its server block (or
 just its `location` for a single page) and add the host to
 `access_control.rules` in `authelia/configuration.yml`, then restart authelia.
 
+### Portal theming
+
+The login portal is branded to match `https://ryan.hellyer.kiwi`:
+
+* **Logo + favicon** — `authelia/assets/logo.png` and `authelia/assets/favicon.ico`.
+  Authelia 4.39 reads these via `server.asset_path: '/config/assets'` (the
+  `./authelia` dir is mounted at `/config`). These are the **only** image
+  overrides Authelia supports; there is no custom-CSS hook.
+* **Custom CSS** — because there is no CSS hook, `auth-site.conf` injects
+  `<link rel="stylesheet" href="/themes/rh-theme.css">` into the portal HTML
+  with `sub_filter`, and serves `/themes/` from
+  `~/www/auth.hellyer.kiwi/themes/` (same-origin, so Authelia's default CSP
+  already permits it; no CSP weakening). The stylesheet is
+  `authelia/assets/theme.css` and targets MUI's stable `.Mui*` classes and
+  palette custom properties. Font is self-hosted at
+  `authelia/assets/fonts/outfit.woff2`.
+* `provision-authelia.sh` copies `theme.css` + `fonts/` into
+  `~/www/auth.hellyer.kiwi/themes/` on every run (owner `ryan:www-data`, dirs
+  2775, files 664). Re-run it after editing the theme, then reload nginx:
+
+  ```bash
+  sudo bash scripts/provision-authelia.sh
+  sudo podman exec nginx nginx -t && sudo podman exec nginx nginx -s reload
+  ```
+
+  A browser hard-refresh may be needed to pick up the new `theme.css`.
+
 ## TLS certificates
 
 * Every server block serves the same **`pressabl`** certificate
