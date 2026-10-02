@@ -11,18 +11,19 @@
 #
 # The initial user is created from AUTHELIA_ADMIN_USER / AUTHELIA_ADMIN_EMAIL /
 # AUTHELIA_ADMIN_PASSWORD in .env. The password is hashed with the Authelia
-# binary itself (`authelia hash-password`); the plaintext never lands on disk
-# beyond .env, and the generated users_database.yml is gitignored and
-# snapshot-backed.
+# binary itself (`authelia crypto hash generate argon2`, falling back to the
+# legacy `authelia hash-password`); the plaintext never lands on disk beyond
+# .env, and the generated users_database.yml is gitignored and snapshot-backed.
 #
-# This script is the STANDALONE entry point: it creates its own data dir and
-# starts the container, so it does not require a (destructive) full deploy.sh.
-# It does need .env (with the AUTHELIA_* secrets + admin password) and a
-# running podman/compose stack. Run from anywhere; re-running is safe.
+# This script is the STANDALONE entry point: it creates its own data dir, fills
+# in any missing AUTHELIA_* secrets in .env, and starts the container, so it
+# does not require a (destructive) full deploy.sh. The admin user/email default
+# to ryan / admin@hellyer.kiwi; only AUTHELIA_ADMIN_PASSWORD must be supplied.
+# Needs a running podman/compose stack. Run from anywhere; re-running is safe.
 #
 # Idempotent: re-running regenerates users_database.yml from the current .env
-# values and restarts the container. Pass --no-hash to skip re-hashing (only
-# rewrites file/metadata) — not usually needed.
+# values and restarts the container. Existing secrets are never rotated. Pass
+# --no-hash to skip re-hashing (only rewrites file/metadata).
 #
 # Options: --dry-run, --no-hash
 #
@@ -49,7 +50,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
     --no-hash) DO_HASH=0; shift ;;
-    -h|--help) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Unknown option: $1" ;;
   esac
 done
@@ -57,18 +58,63 @@ run() { if [ "$DRY" = 1 ]; then printf '    DRY: %s\n' "$*"; else "$@"; fi; }
 
 USERS_FILE="$DATA_DIR/users_database.yml"
 
-# ---- validate required settings --------------------------------------------
+# ---- validate / complete settings ------------------------------------------
+# .env is the source of truth. The three secrets are auto-generated here if
+# missing (so this script is a self-contained, NON-destructive alternative to
+# running the full, destructive deploy.sh). The admin identity defaults to the
+# repo's ryan account; only the password must be supplied by the operator.
+ENV_FILE="$PWD/.env"
+[ -f "$ENV_FILE" ] || die ".env not found — run scripts/deploy.sh once to create it (or copy .env.example)."
+
+AUTHELIA_ADMIN_USER="${AUTHELIA_ADMIN_USER:-ryan}"
+AUTHELIA_ADMIN_EMAIL="${AUTHELIA_ADMIN_EMAIL:-admin@hellyer.kiwi}"
+AUTHELIA_IMAGE="docker.io/authelia/authelia:4.39"
+
+# In a dry run, do not modify .env — just report what would happen and continue
+# with whatever is already loaded, so the preview is side-effect free.
+if [ "$DRY" = 1 ]; then
+  say "DRY RUN — .env will not be modified"
+  [ -n "$(get_env "$ENV_FILE" AUTHELIA_SESSION_SECRET 2>/dev/null || true)" ] \
+    || warn "AUTHELIA_SESSION_SECRET would be generated"
+  [ -n "$(get_env "$ENV_FILE" AUTHELIA_STORAGE_ENCRYPTION_KEY 2>/dev/null || true)" ] \
+    || warn "AUTHELIA_STORAGE_ENCRYPTION_KEY would be generated"
+  [ -n "$(get_env "$ENV_FILE" AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET 2>/dev/null || true)" ] \
+    || warn "AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET would be generated"
+else
+  # Persist the admin identity defaults if they aren't already in .env.
+  [ -n "$(get_env "$ENV_FILE" AUTHELIA_ADMIN_USER 2>/dev/null || true)" ] \
+    || { set_env "$ENV_FILE" AUTHELIA_ADMIN_USER "$AUTHELIA_ADMIN_USER"; say "Defaulted AUTHELIA_ADMIN_USER=$AUTHELIA_ADMIN_USER in .env"; }
+  [ -n "$(get_env "$ENV_FILE" AUTHELIA_ADMIN_EMAIL 2>/dev/null || true)" ] \
+    || { set_env "$ENV_FILE" AUTHELIA_ADMIN_EMAIL "$AUTHELIA_ADMIN_EMAIL"; say "Defaulted AUTHELIA_ADMIN_EMAIL=$AUTHELIA_ADMIN_EMAIL in .env"; }
+
+  # Generate any missing secrets (idempotent — never rotates existing values).
+  for _var in AUTHELIA_SESSION_SECRET AUTHELIA_STORAGE_ENCRYPTION_KEY \
+              AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET; do
+    _before="$(get_env "$ENV_FILE" "$_var" 2>/dev/null || true)"
+    ensure_secret "$ENV_FILE" "$_var" >/dev/null
+    [ -n "$_before" ] || say "Generated $_var in .env"
+  done
+  unset _var _before
+  # Re-read .env so the values above reach `podman compose`.
+  set -a; source "$ENV_FILE"; set +a
+fi
+
 AUTHELIA_ADMIN_USER="${AUTHELIA_ADMIN_USER:-}"
 AUTHELIA_ADMIN_EMAIL="${AUTHELIA_ADMIN_EMAIL:-}"
 AUTHELIA_ADMIN_PASSWORD="${AUTHELIA_ADMIN_PASSWORD:-}"
-AUTHELIA_IMAGE="docker.io/authelia/authelia:4.39"
 
 [ -n "$AUTHELIA_ADMIN_USER" ]     || die "AUTHELIA_ADMIN_USER is not set in .env."
 [ -n "$AUTHELIA_ADMIN_EMAIL" ]    || die "AUTHELIA_ADMIN_EMAIL is not set in .env."
-[ -n "$AUTHELIA_ADMIN_PASSWORD" ] || die "AUTHELIA_ADMIN_PASSWORD is not set in .env."
+if [ "$DRY" = 1 ]; then
+  [ -n "$AUTHELIA_ADMIN_PASSWORD" ] || warn "AUTHELIA_ADMIN_PASSWORD is not set (dry run — nothing to hash)"
+else
+  [ -n "$AUTHELIA_ADMIN_PASSWORD" ] || die "AUTHELIA_ADMIN_PASSWORD is empty in .env — set it (to the password you want to log in with), then re-run."
+fi
 
-[ -n "${AUTHELIA_SESSION_SECRET:-}" ] && [ -n "${AUTHELIA_STORAGE_ENCRYPTION_KEY:-}" ] \
-  || die "AUTHELIA_SESSION_SECRET / AUTHELIA_STORAGE_ENCRYPTION_KEY missing — run scripts/deploy.sh first (it generates them)."
+if [ "$DRY" != 1 ]; then
+  [ -n "${AUTHELIA_SESSION_SECRET:-}" ] && [ -n "${AUTHELIA_STORAGE_ENCRYPTION_KEY:-}" ] \
+    || die "AUTHELIA_SESSION_SECRET / AUTHELIA_STORAGE_ENCRYPTION_KEY could not be set in .env."
+fi
 
 # ---- 1. data dir + hash the password ---------------------------------------
 say "Ensuring data dir $DATA_DIR"
@@ -78,12 +124,25 @@ HASH="$AUTHELIA_ADMIN_PASSWORD"
 if [ "$DO_HASH" = 1 ]; then
   say "Hashing the admin password with the Authelia binary"
   if [ "$DRY" = 1 ]; then
-    echo "    DRY: podman run --rm $AUTHELIA_IMAGE authelia hash-password <redacted>"
+    echo "    DRY: podman run --rm $AUTHELIA_IMAGE authelia crypto hash generate argon2 --password <redacted>"
     HASH='$argon2id$REDACTED'
   else
-    HASH="$(printf '%s' "$AUTHELIA_ADMIN_PASSWORD" \
-      | podman run --rm -i "$AUTHELIA_IMAGE" authelia hash-password 2>/dev/null \
-      | awk 'NR==1{print $NF}')"
+    # Authelia prints a version banner (e.g. "v4.39.28") before the digest, and
+    # the digest line is prefixed "Digest: ". Never take a fixed line number —
+    # extract the $argon2... token wherever it appears. Prefer the current
+    # `crypto hash generate argon2` subcommand; fall back to the legacy
+    # `hash-password` for older images. `|| true` is essential: with
+    # `set -o pipefail`, a grep with no match would otherwise abort the script
+    # before the fallback is tried.
+    hash_digest() { # podman args... (stdin ignored)
+      podman run --rm "$@" 2>/dev/null \
+        | grep -oE '\$argon2[^[:space:]]+' | tail -1 || true
+    }
+    HASH="$(hash_digest "$AUTHELIA_IMAGE" authelia crypto hash generate argon2 --password "$AUTHELIA_ADMIN_PASSWORD")"
+    case "$HASH" in
+      \$argon2*) : ;;
+      *) HASH="$(hash_digest -i "$AUTHELIA_IMAGE" authelia hash-password)" ;;
+    esac
     case "$HASH" in
       \$argon2*) : ;;
       *) die "Could not hash the password (got '$HASH'). Is the image pullable? Try: podman pull $AUTHELIA_IMAGE" ;;

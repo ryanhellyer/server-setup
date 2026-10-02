@@ -30,6 +30,7 @@ cd "$(dirname "$0")/.."
 source scripts/lib-paths.sh
 source scripts/lib-containers.sh
 source scripts/lib-nginx.sh
+source scripts/lib-env.sh
 
 [ "$(id -u)" -eq 0 ] || { echo "Run as root (sudo bash scripts/deploy.sh)."; exit 1; }
 
@@ -115,28 +116,24 @@ PY
 fi
 # Authelia needs three 64-char secrets (session, storage encryption, reset-
 # password JWT). Generate them once into .env if absent — same approach as the
-# MariaDB root password. They are rendered into the container as AUTHELIA_* env
-# vars by compose.yaml, never committed (.env is gitignored).
+# MariaDB root password, via the shared lib-env helper. They are rendered into
+# the container as AUTHELIA_* env vars by compose.yaml, never committed (.env is
+# gitignored). Self-healing: also fills in any key missing from an .env created
+# before Authelia existed. Existing values are NEVER rotated (that would
+# invalidate sessions and encrypted data).
 for _var in AUTHELIA_SESSION_SECRET AUTHELIA_STORAGE_ENCRYPTION_KEY \
             AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET; do
-  if ! grep -q "^${_var}=." .env; then
-    if grep -q "^${_var}=" .env; then
-      _val="$(openssl rand -hex 32)"
-      python3 - .env "$_var" "$_val" <<'PY'
-import sys
-path, key, val = sys.argv[1], sys.argv[2], sys.argv[3]
-lines = open(path).read().splitlines()
-for i, ln in enumerate(lines):
-    if ln.startswith(key + "="):
-        lines[i] = f"{key}={val}"
-open(path, "w").write("\n".join(lines) + "\n")
-PY
-    else
-      printf '%s=%s\n' "$_var" "$(openssl rand -hex 32)" >> .env
-    fi
-    echo "==> Generated $_var in .env"
-  fi
+  _had="$(get_env .env "$_var" 2>/dev/null || true)"
+  ensure_secret .env "$_var" >/dev/null
+  [ -n "$_had" ] || echo "==> Generated $_var in .env"
 done
+unset _var _had
+# Seed the admin identity if an existing .env predates it. The password is left
+# for the operator (provision-authelia.sh will prompt them to set it).
+[ -n "$(get_env .env AUTHELIA_ADMIN_USER 2>/dev/null || true)" ] \
+  || { set_env .env AUTHELIA_ADMIN_USER "ryan"; echo "==> Set AUTHELIA_ADMIN_USER=ryan in .env"; }
+[ -n "$(get_env .env AUTHELIA_ADMIN_EMAIL 2>/dev/null || true)" ] \
+  || { set_env .env AUTHELIA_ADMIN_EMAIL "admin@hellyer.kiwi"; echo "==> Set AUTHELIA_ADMIN_EMAIL=admin@hellyer.kiwi in .env"; }
 # shellcheck disable=SC1091
 set -a && . ./.env && set +a
 DEPLOY_ENV="${DEPLOY_ENV:-test}"
