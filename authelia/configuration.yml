@@ -23,9 +23,6 @@
 ---
 theme: 'auto'
 
-# Where users land after login when no original URL was captured.
-default_redirection_url: 'https://chat.hellyer.kiwi'
-
 server:
   host: '0.0.0.0'
   port: 9091
@@ -90,6 +87,12 @@ session:
   cookies:
     # Cookie scoped to the whole hellyer.kiwi domain so the portal session is
     # presented when nginx asks about chat.hellyer.kiwi.
+    #
+    # IMPORTANT: when a `cookies` list is used, default_redirection_url MUST be
+    # set per-cookie — a GLOBAL default_redirection_url makes Authelia refuse to
+    # start ("session: option 'cookies' must be configured with the per cookie
+    # option 'default_redirection_url' but the global one is configured"). So
+    # this file intentionally has no global default_redirection_url.
     - domain: 'hellyer.kiwi'
       authelia_url: 'https://auth.hellyer.kiwi'
       default_redirection_url: 'https://chat.hellyer.kiwi'
