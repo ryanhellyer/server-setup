@@ -134,12 +134,16 @@ else
   run mkdir -p "$DATA_DIR/themes"
   run cp -f "$ASSETS_DIR/theme.css" "$DATA_DIR/themes/rh-theme.css"
   run cp -rf "$ASSETS_DIR/fonts" "$DATA_DIR/themes/"
+  # Static error page nginx serves (without the sub_filter rewrite) when
+  # Authelia is unreachable — see nginx/conf.d/auth-site.conf.
+  run mkdir -p "$DATA_DIR/errors"
+  run cp -f "$ASSETS_DIR/error.html" "$DATA_DIR/errors/_authelia_error.html"
   # nginx (www-data, uid 33) serves these, so use the shared-hosting model:
   # owner ryan:www-data, dirs 2775, files 664 (see scripts/fix-perms.sh).
-  run chown -R "$ADMIN_USER_RESOLVED:www-data" "$DATA_DIR/themes" 2>/dev/null || true
-  run find "$DATA_DIR/themes" -type d -exec chmod 2775 {} + 2>/dev/null || true
-  run find "$DATA_DIR/themes" -type f -exec chmod 664 {} + 2>/dev/null || true
-  ok "Theme assets in place (rh-theme.css + fonts)."
+  run chown -R "$ADMIN_USER_RESOLVED:www-data" "$DATA_DIR/themes" "$DATA_DIR/errors" 2>/dev/null || true
+  run find "$DATA_DIR/themes" "$DATA_DIR/errors" -type d -exec chmod 2775 {} + 2>/dev/null || true
+  run find "$DATA_DIR/themes" "$DATA_DIR/errors" -type f -exec chmod 664 {} + 2>/dev/null || true
+  ok "Theme + error-page assets in place."
 fi
 
 HASH="$AUTHELIA_ADMIN_PASSWORD"
@@ -219,16 +223,29 @@ else
 fi
 
 # ---- 4. wait for health -----------------------------------------------------
+# NOTE: the official authelia image is minimal and does NOT reliably ship
+# `wget`/`curl` inside the container, so probing from within can always fail
+# even when Authelia is healthy. Try, in order:
+#   1. wget inside the container (works on some builds)
+#   2. the container's own /app/healthcheck.sh (shipped by the image)
+#   3. a host-side curl through the portal (needs nginx up; best-effort)
+# All are best-effort; a miss only warns — it never aborts provisioning.
 if [ "$DRY" != 1 ]; then
-  say "Waiting for Authelia on http://127.0.0.1:9091/api/health (via the container network)"
+  say "Waiting for Authelia to become healthy"
   up=0
   for _ in $(seq 1 30); do
     if podman exec "$CONTAINER_AUTHELIA" wget -qO- http://127.0.0.1:9091/api/health >/tmp/authelia-health.json 2>/dev/null; then
       ok "Authelia is up: $(cat /tmp/authelia-health.json)"; up=1; break
     fi
+    if podman exec "$CONTAINER_AUTHELIA" /app/healthcheck.sh >/dev/null 2>&1; then
+      ok "Authelia is up (image healthcheck passed)"; up=1; break
+    fi
     sleep 3
   done
-  [ "$up" = 1 ] || warn "Authelia did not answer in 90s — check: podman logs authelia"
+  if [ "$up" != 1 ]; then
+    warn "No in-container health answer yet — this is often just a missing"
+    warn "wget/curl in the image. Verify with: podman logs --tail=40 $CONTAINER_AUTHELIA"
+  fi
 fi
 
 # ---- 5. reload nginx --------------------------------------------------------
