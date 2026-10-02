@@ -73,9 +73,24 @@ authentication_backend:
 access_control:
   # Deny by default: a vhost is protected only when nginx asks Authelia about
   # it AND a rule below grants access. Add future protected hosts here.
+  #
+  # All protected hosts share the single `ryan` user (and the hellyer.kiwi
+  # session cookie), so one login covers them all. `two_factor` requires a
+  # TOTP device to have been registered (see scripts/authelia-notify-code.sh
+  # for enrollment on boxes with no mail server).
+  #
+  # To add a host: add it here AND include the two authelia snippets in that
+  # host's nginx server block (see nginx/sites/README.md).
   default_policy: 'deny'
   rules:
-    - domain: 'chat.hellyer.kiwi'
+    - domain:
+        - 'chat.hellyer.kiwi'
+        - 'storage.hellyer.kiwi'
+        - 'invoices.hellyer.kiwi'
+        - 'admin.ryan.hellyer.kiwi'
+        - 'health.hellyer.kiwi'
+        - 'secure.hellyer.kiwi'
+        - 'dad.hellyer.kiwi'
       policy: 'two_factor'
 
 session:

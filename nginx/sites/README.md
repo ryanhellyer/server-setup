@@ -6,12 +6,16 @@ block's maps (root, log path, etc.).
 
 | Block file                     | Hosts it serves                                                   |
 |--------------------------------|-------------------------------------------------------------------|
-| `conf.d/php-site.conf`         | gpx, ryan, kartastrophecup.de, spam-destroyer.com, german, cvs, ai, health, instantattend.com |
+| `conf.d/php-site.conf`         | gpx, ryan, kartastrophecup.de, spam-destroyer.com, german, cvs, ai, instantattend.com |
 | `conf.d/wordpress-multisite.conf` | all pressabl WordPress Multisite subdomains                   |
-| `conf.d/secure-site.conf`      | secure.hellyer.kiwi                                               |
-| `conf.d/static-site.conf`      | chocolate, julia, stuff, mum, dad                                 |
+| `conf.d/secure-site.conf`      | secure.hellyer.kiwi (Authelia)                                    |
+| `conf.d/static-site.conf`      | chocolate, julia, stuff, mum                                      |
 | `conf.d/static-spa.conf`       | comicjet.com, historic-wordpress.hellyer.kiwi                     |
 | `conf.d/node-proxy.conf`       | chat.hellyer.kiwi (behind Authelia)                               |
+| `conf.d/health-site.conf`      | health.hellyer.kiwi (Authelia)                                    |
+| `conf.d/protected-multisite.conf` | invoices.hellyer.kiwi, admin.ryan.hellyer.kiwi (Authelia)      |
+| `conf.d/dad-site.conf`         | dad.hellyer.kiwi (Authelia)                                       |
+| `conf.d/storage-site.conf`     | storage.hellyer.kiwi (Authelia)                                   |
 | `conf.d/auth-site.conf`        | auth.hellyer.kiwi (Authelia login portal)                         |
 | `conf.d/stats-site.conf`       | stats.hellyer.kiwi (self-hosted GoatCounter)                      |
 | `conf.d/redirects.conf`        | all 301-redirect domains                                          |
@@ -30,6 +34,12 @@ to the portal (`auth.hellyer.kiwi`). The gate is reusable:
   ```
 * To protect **one path/page**, add the authz include once (server level) and
   put `authelia-authrequest.conf` inside that `location` instead.
+
+**Important:** `auth_request` is *not* variable-driven, so a protected host
+cannot live in a shared server block alongside unprotected ones. Each protected
+host therefore gets its own small `conf.d/` block (e.g. `health-site.conf`,
+`protected-multisite.conf`, `dad-site.conf`, `storage-site.conf`). Use
+`scripts/new-site.sh <domain> static-auth` (or `php-auth`) to scaffold one.
 
 Then allow the host in `authelia/configuration.yml` (`access_control.rules`)
 and restart Authelia. The user database/config/DB live under

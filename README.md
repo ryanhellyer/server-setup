@@ -442,8 +442,11 @@ checks/debugging; nginx reaches it by name on the compose network.
 
 ## Authelia (forward-auth / SSO)
 
-**Authelia** gates access to protected vhosts. `chat.hellyer.kiwi` is protected
-today; the gate is reusable for future sites/pages.
+**Authelia** gates access to protected vhosts: `chat.hellyer.kiwi`,
+`storage.hellyer.kiwi`, `invoices.hellyer.kiwi`, `admin.ryan.hellyer.kiwi`,
+`health.hellyer.kiwi`, `secure.hellyer.kiwi` and `dad.hellyer.kiwi`. On
+`secure`/`dad` it replaces the old HTTP basic auth. The gate is reusable for
+future sites/pages.
 
 * Container: `compose.yaml` service `authelia`, config in `authelia/`, data
   (SQLite DB + user database + notifier) at `~/www/auth.hellyer.kiwi:/data` so
