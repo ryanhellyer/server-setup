@@ -86,8 +86,23 @@ access_control:
   #
   # To add a host: add it here AND include the two authelia snippets in that
   # host's nginx server block (see nginx/sites/README.md).
+  #
+  # Rules are first-match, so narrower resource rules MUST precede the broad
+  # domain rule below.
   default_policy: 'deny'
   rules:
+    # ryan.hellyer.kiwi's Laravel app fetches this read-only snapshot
+    # server-side (config/wordpress.php). It must NOT require SSO: an
+    # unauthenticated request would otherwise be bounced to the login portal,
+    # the app would receive HTML instead of JSON, and every page (including
+    # 404s) would 500. Scope is deliberately tight — only the published
+    # posts/tags endpoint the app uses. wp-admin and the rest of /wp-json stay
+    # behind two_factor via the rule below.
+    - domain: 'admin.ryan.hellyer.kiwi'
+      resources:
+        - '^/wp-json/wordpress-api/v1/posts/?$'
+      policy: 'bypass'
+
     - domain:
         - 'chat.hellyer.kiwi'
         - 'storage.hellyer.kiwi'
