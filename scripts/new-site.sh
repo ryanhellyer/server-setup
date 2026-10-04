@@ -238,7 +238,10 @@ case "$TYPE" in
   *)                        ROOT="" ;;
 esac
 if [ -n "$ROOT" ]; then
-  mkdir -p "$ROOT" "$LOG_ROOT/$DOMAIN"
+  mkdir -p "$ROOT"
+  # Log dir must be group-writable by www-data (the nginx worker creates the
+  # per-site *.log files); plain mkdir gives root-owned 2755 and nginx 500s.
+  install -d -g www-data -m 2775 "$LOG_ROOT/$DOMAIN"
   echo "  -> created $ROOT and $LOG_ROOT/$DOMAIN"
   "$PWD/scripts/fix-perms.sh" "$WWW_ROOT/$DOMAIN"
 fi

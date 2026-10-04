@@ -25,15 +25,26 @@
 # because per-site paths can also come from a `map` (e.g. php-site.conf's
 # $site_access_log), and those are opened at request time — a missing dir means
 # the log write silently fails.
+#
+# The dirs MUST be group-writable by www-data (owner root, group www-data, mode
+# 2775): the nginx worker runs as www-data and CREATES the per-site *.log files
+# itself. A plain `mkdir -p` yields root-owned 2755, which the worker cannot
+# write to — nginx then fails to open $site_access_log on every request and
+# answers 500 for the whole vhost (this happened to three sites on the live
+# box). So apply the shared-hosting mode here too, including to dirs that
+# already exist, so a deploy self-heals a bad mode.
 ensure_nginx_log_dirs() {
-  local dirs d
+  local dirs d host
   dirs="$( { grep -rhvE '^[[:space:]]*#' nginx/nginx.conf nginx/conf.d nginx/snippets 2>/dev/null; } \
     | grep -oE '/[A-Za-z0-9._/-]+\.log' \
     | xargs -r -n1 dirname | sort -u || true )"
 
   while IFS= read -r d; do
     [ -n "$d" ] || continue
-    mkdir -p "$(www_host_path "$d")"
+    host="$(www_host_path "$d")"
+    mkdir -p "$host"
+    chown root:www-data "$host" 2>/dev/null || true
+    chmod 2775 "$host" 2>/dev/null || true
   done <<< "$dirs"
 }
 
