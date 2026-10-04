@@ -204,6 +204,12 @@ sudo bash scripts/install-login-help.sh --remove   # remove it + restore Ubuntu'
   up to 30 min staggered) to pull the upstream images
   (`mariadb`/`valkey`/`open-webui`/`certbot`) and rebuild `php`/`nginx`/`node`,
   which re-runs `apt` so the Ubuntu packages *inside* the images are updated.
+  The recreate is applied by reloading `server-stack.service`
+  (`systemctl reload server-stack.service`) so the container processes stay in
+  the stack supervisor's persistent cgroup; running `compose up` directly from
+  the timer job would let systemd tear the job's cgroup down on exit and kill
+  the containers. The script also verifies every expected container is running
+  after the update.
   It does **not** re-provision sites, so site data is untouched. Logs:
   `/var/log/server-setup/update.log`.
 
@@ -549,7 +555,7 @@ install/deploy:
 |---|---|---|
 | Nightly backup | daily 03:00 | `scripts/backup.sh` |
 | TLS renewal | 2×/day (renews only when <30 days left) | `scripts/certbot-issue.sh` |
-| Weekly image update | Sun 04:00 | `scripts/update.sh` |
+| Weekly image update | Sun 04:00 | `scripts/update.sh` (reloads `server-stack.service`) |
 | Log rotation | hourly (caps per-site logs at 50M) | `logrotate /etc/logrotate-server-setup.conf` |
 | Gmail fetch | daily 02:00 | `scripts/getmail.sh` |
 | Laravel scheduler | every minute | `scripts/laravel-scheduler.sh` (`LARAVEL_SCHEDULER_SITES`) |

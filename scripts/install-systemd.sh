@@ -6,6 +6,11 @@
 # Supervision is a single `server-stack.service` that wraps
 # `podman compose up -d` / `down` for the whole stack, so compose stays the
 # source of truth and the containers' own `restart:` policies handle crashes.
+# The unit stays active after `up` (RemainAfterExit=yes) and exposes an
+# `ExecReload` that runs `up -d --build`; anything that recreates containers
+# (scripts/update.sh) must go through `systemctl reload server-stack.service`
+# so the conmon processes live in this persistent cgroup and not in the
+# transient cgroup of the calling timer job (which systemd kills on exit).
 # Older installs generated one `container-<name>.service` per container with the
 # deprecated `podman generate systemd`. Those units were Type=forking and pinned
 # each container's ID in PIDFile=, so they broke every time compose recreated a
@@ -86,6 +91,7 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=$PWD
 ExecStart=${COMPOSE[*]} -f $COMPOSE_FILE up -d
+ExecReload=${COMPOSE[*]} -f $COMPOSE_FILE up -d --build
 ExecStop=${COMPOSE[*]} -f $COMPOSE_FILE down
 TimeoutStartSec=600
 TimeoutStopSec=120
@@ -145,6 +151,12 @@ echo "==> wrote /etc/logrotate-server-setup.conf (logs under $LOG_ROOT, 50M cap)
 # remembering to cron them. Idempotent — unit files are overwritten and the
 # timers re-enabled. `enable --now` on a .timer only arms the schedule
 # (OnCalendar); it does NOT run the oneshot service immediately.
+#
+# NOTE: these jobs are Type=oneshot with RemainAfterExit=no, so systemd tears
+# the service's cgroup down as soon as ExecStart exits. Never use a job as the
+# parent of a long-lived process (e.g. `podman compose up`, which leaves conmon
+# running) — it would be signalled/killed on exit. Recreate the stack through
+# server-stack.service (`systemctl reload server-stack.service`) instead.
 write_job() { # "$1" name, "$2" service desc, "$3" exec, "$4" timer desc, "$5" OnCalendar, "$6" delay
   local name="$1" sdesc="$2" exec="$3" tdesc="$4" cal="$5" delay="$6"
   cat > "$SYSTEMD_DIR/$name.service" <<EOF
