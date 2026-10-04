@@ -157,10 +157,8 @@ echo "==> wrote /etc/logrotate-server-setup.conf (logs under $LOG_ROOT, 50M cap)
 # parent of a long-lived process (e.g. `podman compose up`, which leaves conmon
 # running) — it would be signalled/killed on exit. Recreate the stack through
 # server-stack.service (`systemctl reload server-stack.service`) instead.
-write_job() { # "$1" name, "$2" service desc, "$3" exec, "$4" timer desc, "$5" OnCalendar, "$6" delay, "$7" timeout (optional)
-  local name="$1" sdesc="$2" exec="$3" tdesc="$4" cal="$5" delay="$6" timeout="${7:-}"
-  local timeout_line=""
-  [ -n "$timeout" ] && timeout_line="TimeoutStartSec=$timeout"
+write_job() { # "$1" name, "$2" service desc, "$3" exec, "$4" timer desc, "$5" OnCalendar, "$6" delay
+  local name="$1" sdesc="$2" exec="$3" tdesc="$4" cal="$5" delay="$6"
   cat > "$SYSTEMD_DIR/$name.service" <<EOF
 [Unit]
 Description=$sdesc
@@ -169,7 +167,6 @@ After=network-online.target
 [Service]
 Type=oneshot
 ExecStart=$exec
-$timeout_line
 EOF
   cat > "$SYSTEMD_DIR/$name.timer" <<EOF
 [Unit]
@@ -234,19 +231,7 @@ write_job "server-scheduler" \
   "server-setup Laravel scheduler tick" \
   "/bin/bash $PWD/scripts/laravel-scheduler.sh" \
   "run artisan schedule:run for each Laravel site" \
-  "*-*-* *:*:00" "0"
-
-# Container watchdog: act on hung-but-running containers. `restart:
-# unless-stopped` only fires on process EXIT, so an app that hangs while still
-# listening (Open WebUI, MariaDB have both done this) is never recovered by
-# compose. Every 2 minutes, check each container's healthcheck verdict / a
-# targeted probe and restart the ones that fail. See
-# scripts/container-watchdog.sh.
-write_job "server-watchdog" \
-  "server-setup container health watchdog" \
-  "/bin/bash $PWD/scripts/container-watchdog.sh" \
-  "restart hung/unhealthy stack containers" \
-  "*-*-* *:0/2:00" "0" "10min"
+   "*-*-* *:*:00" "0"
 
 # WordPress multisite catch-up cron: run all due WP-Cron events every 10 min
 # (a full pass over ~26 sites can take longer than a minute, so a tighter
@@ -291,9 +276,9 @@ WantedBy=multi-user.target
 EOF
 done
 
-echo "==> Enabling scheduled jobs (nightly backup + TLS renewal + weekly update + hourly log rotation + daily getmail + minute scheduler/wpcron + container watchdog)"
+echo "==> Enabling scheduled jobs (nightly backup + TLS renewal + weekly update + hourly log rotation + daily getmail + minute scheduler/wpcron)"
 systemctl daemon-reload
-systemctl enable --now server-backup.timer certbot-renew.timer server-update.timer server-logs.timer server-getmail.timer server-scheduler.timer server-wpcron.timer server-watchdog.timer
+systemctl enable --now server-backup.timer certbot-renew.timer server-update.timer server-logs.timer server-getmail.timer server-scheduler.timer server-wpcron.timer
 for site in $QUEUE_SITES; do
   dir="$(apply_rename "$site")"; [ -n "$dir" ] || dir="$site"
   unit="server-queue-worker-${dir//[^A-Za-z0-9]/-}.service"
@@ -304,5 +289,5 @@ echo
 echo "Systemd units installed and enabled. The stack will start at boot:"
 echo "  systemctl status $STACK_UNIT"
 echo "Scheduled jobs (timers):"
-echo "  systemctl list-timers 'server-backup.timer' 'certbot-renew.timer' 'server-update.timer' 'server-logs.timer' 'server-getmail.timer' 'server-scheduler.timer' 'server-wpcron.timer' 'server-watchdog.timer'"
+echo "  systemctl list-timers 'server-backup.timer' 'certbot-renew.timer' 'server-update.timer' 'server-logs.timer' 'server-getmail.timer' 'server-scheduler.timer' 'server-wpcron.timer'"
 [ -n "$QUEUE_SITES" ] && echo "Queue workers (services): systemctl list-units 'server-queue-worker-*.service'"

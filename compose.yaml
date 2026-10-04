@@ -80,8 +80,13 @@ services:
     #
     # Healthcheck: Open WebUI has hung during startup before (the process keeps
     # listening but never answers). `restart: unless-stopped` does NOT act on a
-    # hung-but-running container, so the healthcheck is what marks it unhealthy;
-    # scripts/container-watchdog.sh (server-watchdog.timer) then restarts it.
+    # hung-but-running container, so this check exists purely to SURFACE the
+    # problem: `podman ps` shows "(unhealthy)" and `podman inspect open-webui`
+    # carries the verdict, so the failure is visible instead of a silent hang.
+    # Recovery is manual: `sudo systemctl restart server-stack.service`
+    # (recreates the container inside the stack's persistent cgroup — do NOT
+    # `podman restart` from a transient session/timer cgroup; systemd reaps that
+    # cgroup and SIGKILLs the container's conmon).
     # curl is present in the image; /health returns {"status":true}.
     restart: unless-stopped
     healthcheck:

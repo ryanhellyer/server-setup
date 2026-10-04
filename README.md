@@ -560,21 +560,12 @@ install/deploy:
 | Gmail fetch | daily 02:00 | `scripts/getmail.sh` |
 | Laravel scheduler | every minute | `scripts/laravel-scheduler.sh` (`LARAVEL_SCHEDULER_SITES`) |
 | WordPress cron | every 10 minutes | `scripts/wp-cron.sh` (`WP_CRON_PATH`) |
-| Container watchdog | every 2 minutes | `scripts/container-watchdog.sh` |
-
-`container-watchdog.sh` exists because `restart: unless-stopped` only acts when
-a container's process **exits** — an app that hangs but keeps running (the
-process listens on its port yet never answers, as Open WebUI and MariaDB have
-both done) is never recovered by compose. The watchdog checks each container's
-healthcheck verdict (Open WebUI has one in `compose.yaml`) or a targeted probe,
-and restarts anything that has gone unhealthy, hung or paused. Logs to
-`/var/log/server-setup/watchdog.log`.
 
 There is also one **service** (not a timer): a supervised Laravel queue worker per
 site in `QUEUE_WORKER_SITES`, written as `server-queue-worker-<site>.service`
 (`php artisan queue:work database`, `Restart=always`).
 
-Check them with `systemctl list-timers 'server-backup.timer' 'certbot-renew.timer' 'server-update.timer' 'server-logs.timer' 'server-getmail.timer' 'server-scheduler.timer' 'server-wpcron.timer' 'server-watchdog.timer'` and `systemctl list-units 'server-queue-worker-*.service'`.
+Check them with `systemctl list-timers 'server-backup.timer' 'certbot-renew.timer' 'server-update.timer' 'server-logs.timer' 'server-getmail.timer' 'server-scheduler.timer' 'server-wpcron.timer'` and `systemctl list-units 'server-queue-worker-*.service'`.
 
 > **Off-site backups.** `scripts/backup.sh` writes dated, hardlinked
 > `rsync --link-dest` snapshots to the "pressabl-backups" Storage Box (u676107):
