@@ -77,7 +77,19 @@ services:
     # Restarted by compose (`restart: unless-stopped`) like the rest of the
     # stack. The CPU/memory limits below stop a crash-looping app — e.g. a
     # corrupt SQLite DB — from starving the rest of the stack.
+    #
+    # Healthcheck: Open WebUI has hung during startup before (the process keeps
+    # listening but never answers). `restart: unless-stopped` does NOT act on a
+    # hung-but-running container, so the healthcheck is what marks it unhealthy;
+    # scripts/container-watchdog.sh (server-watchdog.timer) then restarts it.
+    # curl is present in the image; /health returns {"status":true}.
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
     deploy:
       resources:
         limits:
