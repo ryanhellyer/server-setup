@@ -1,0 +1,1 @@
+rsync -avz pressabl/public_html/wp-content/plugins/deprecated/ ./deprecated/

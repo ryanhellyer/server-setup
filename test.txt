@@ -1,0 +1,1 @@
+sudo podman exec -u www-data -w /var/www/pressabl/public_html php-fpm wp eval 'var_dump(wp_mail("admin@hellyer.kiwi","WP test","ok"));'
