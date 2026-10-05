@@ -23,6 +23,9 @@ apt-get update
 apt-get upgrade -y
 
 echo "==> installing host packages"
+# msmtp-mta provides /usr/sbin/sendmail, relaying host mail (cron/fail2ban/…)
+# to the mailrelay container -> Telegram (EMAILS.md); swaks is the SMTP test
+# tool used by bin/mail-test.
 apt-get install -y \
   podman \
   podman-compose \
@@ -37,6 +40,8 @@ apt-get install -y \
   logrotate \
   getmail6 \
   unattended-upgrades \
+  msmtp-mta \
+  swaks \
   nano
 
 echo "==> capping journald size"
@@ -73,6 +78,29 @@ Unattended-Upgrade::Automatic-Reboot-Time "03:30";
 Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
 EOF
+
+# Outbound mail (EMAILS.md): point the host's /usr/sbin/sendmail (provided by
+# msmtp-mta) at the mailrelay container. This is what makes cron, fail2ban,
+# unattended-upgrades, logwatch, certbot etc. route to Telegram with no further
+# configuration. The relay is published on 127.0.0.1:2525 by compose.yaml.
+echo "==> outbound mail: relay host sendmail to mailrelay (127.0.0.1:2525)"
+cat > /etc/msmtprc <<'EOF'
+# Managed by server-setup (scripts/host-setup.sh). See EMAILS.md.
+# /usr/sbin/sendmail (msmtp-mta) relays to the mailrelay container, which
+# forwards to Telegram. No auth/TLS — localhost-published internal port.
+defaults
+auth           off
+tls            off
+syslog         LOG_MAIL
+
+account        mailrelay
+host           127.0.0.1
+port           2525
+from           server@hellyer.kiwi
+
+account        default : mailrelay
+EOF
+chmod 644 /etc/msmtprc
 
 echo "==> creating bind-mount directories"
 mkdir -p /var/databases /var/cache/nginx /var/log/nginx

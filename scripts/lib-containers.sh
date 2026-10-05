@@ -8,7 +8,7 @@
 #
 # Keep the names in sync with compose.yaml (the deployment source of truth —
 # services: nginx / php (container_name: php-fpm) / node / mariadb / valkey /
-# open-webui / goatcounter / authelia).
+# open-webui / goatcounter / authelia / mailrelay).
 # =============================================================================
 
 # ---- canonical container names (must match compose.yaml) ----
@@ -20,6 +20,7 @@ CONTAINER_NODE="node"
 CONTAINER_OPENWEBUI="open-webui"
 CONTAINER_GOATCOUNTER="goatcounter"
 CONTAINER_AUTHELIA="authelia"
+CONTAINER_MAILRELAY="mailrelay"
 
 # Ordered container inventory (nginx last: it depends on php-fpm/node/open-webui).
 ALL_CONTAINERS=(
@@ -31,6 +32,7 @@ ALL_CONTAINERS=(
   "$CONTAINER_OPENWEBUI"
   "$CONTAINER_GOATCOUNTER"
   "$CONTAINER_AUTHELIA"
+  "$CONTAINER_MAILRELAY"
 )
 
 # ---- host-CLI command -> container (drives bin/pod-exec + install-cli.sh) ----

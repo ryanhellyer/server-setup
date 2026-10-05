@@ -8,9 +8,9 @@
 #   1. pulls the upstream images (mariadb / valkey / open-webui / goatcounter /
 #      authelia / certbot) by their tags — a floating tag resolves to the
 #      newest image;
-#   2. rebuilds the locally-built images (php / nginx / node) from their
-#      Containerfiles. The build re-runs `apt-get update && install`, so the
-#      Ubuntu 24.04 packages inside those images get their latest updates;
+#   2. rebuilds the locally-built images (php / nginx / node / mailrelay) from
+#      their Containerfiles. The build re-runs `apt-get update && install`, so
+#      the Ubuntu 24.04 packages inside those images get their latest updates;
 #   3. recreates any containers whose image changed;
 #   4. prunes the old image layers.
 #

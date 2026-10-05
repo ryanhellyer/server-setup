@@ -22,6 +22,9 @@ env/letsencrypt/
 
 # Local logs / caches
 *.log
+# Python bytecode (mailrelay/mail/gateway.py)
+__pycache__/
+*.pyc
 
 # Temp-backup: backup scripts + configs are versioned, but these stay local:
 #   credentials (Gmail app password, MySQL pass)

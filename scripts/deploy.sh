@@ -348,6 +348,16 @@ if podman container exists "$CONTAINER_PHP_FPM" 2>/dev/null; then
     || echo "  (reload failed — run: sudo podman restart php-fpm)"
 fi
 
+# ---- 9c-iii. Email -> Telegram relay (optional) ----
+# If a bot token is configured, validate it and smoke-test the mailrelay chain
+# (build + start the service, send a test through SMTP -> Telegram). A missing
+# token is a no-op, and a failure must not abort the deploy.
+if [ -n "$(get_env .env TELEGRAM_BOT_TOKEN 2>/dev/null || true)" ]; then
+  echo "==> configuring Email -> Telegram relay"
+  "$PWD/scripts/provision-mail.sh" \
+    || echo "==> (mail relay setup failed — re-run: sudo bash scripts/provision-mail.sh)"
+fi
+
 # ---- 9d. host CLI wrappers for the admin user ----
 # php/composer/mariadb/... + pod-login (interactive shell) into ~/.local/bin.
 # Idempotent; catches servers installed before this step existed.

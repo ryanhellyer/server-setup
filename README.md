@@ -142,6 +142,7 @@ sudo ./install/setup.sh                 # menu: pick "Full install / deploy / up
 | Build a site's front-end assets (Vite) in the `node` container | `sudo bash scripts/build-assets.sh <site> [--force]` (auto-run by `provision-site.sh`) |
 | Copy the snapshot's non-site files (backup scripts, configs, cron) into `~/tools` | `sudo bash scripts/provision-extras.sh [--force]` |
 | Connect the storage boxes + mount `gmail`, `mariadbs` | `sudo bash scripts/storage-mounts.sh` |
+| Configure Email → Telegram + send a test | `sudo bash scripts/provision-mail.sh` (or `mail-test`) |
 | Create/refresh the admin user (`ryan`) with a key + passwordless sudo | `sudo bash scripts/create-admin-user.sh` |
 | Harden SSH (keys only) / revert | `sudo bash scripts/harden-sshd.sh [--revert]` |
 | Provision a remote server, or update its files + open its menu over SSH | `./bootstrap.sh --host <ip>` |
@@ -312,6 +313,48 @@ a plain local dir works too.
 > Migrating from an old server? Copy its `~/.getmail/oldmail-*` state files
 > across first, otherwise getmail re-downloads everything into the Maildir, and
 > make sure only one server runs getmail at a time.
+
+## Email → Telegram
+
+Everything the server tries to email goes to a Telegram chat, instead of
+vanishing (the box has no MTA). Built for `EMAILS.md`, and covering WordPress
+and Laravel sites, Authelia, host cron/fail2ban/unattended-upgrades and any
+future app that speaks `sendmail` or SMTP.
+
+How it hangs together:
+
+* **`mailrelay` container** — a catch-all SMTP sink on the compose `web` network
+  (never public) that forwards every message to a Telegram chat, spooling to a
+  volume and retrying if Telegram is briefly unreachable. Configured by
+  `TELEGRAM_*` / `MAIL_*` in `.env`.
+* **`sendmail` shim (`msmtp`)** — installed in the PHP image and on the host, so
+  `/usr/sbin/sendmail` relays to `mailrelay`. That is what makes WordPress
+  (`wp_mail()` → `mail()`), host cron/fail2ban and friends work with **zero**
+  per-app configuration.
+* **Explicit SMTP** for the few apps that only speak SMTP: Authelia's notifier
+  and Laravel/Symfony (`provision-site.sh` rewrites `MAIL_*` / `MAILER_DSN`)
+  point at `mailrelay:25`. (Open WebUI has no outbound-email code in the current
+  image, so there is nothing to configure there yet.)
+
+Set it up:
+
+```bash
+# 1. @BotFather -> /newbot -> copy the token. Put it + the chat id in .env:
+#    TELEGRAM_BOT_TOKEN=...   TELEGRAM_CHAT_ID=...
+#    (chat id: https://api.telegram.org/bot<TOKEN>/getUpdates)
+# 2. validate + start + test:
+sudo bash scripts/provision-mail.sh
+mail-test                     # send another test from the host
+pod-logs mailrelay -f         # follow the relay
+```
+
+`MAIL_TELEGRAM_MODE` controls what is forwarded: `all` (default) forwards
+everything, including WordPress mail addressed to customers — those are diverted
+away from the customer, so use `local` (only `@hellyer.kiwi`/`@localhost`) or a
+`MAIL_DENY_REGEX` if a site must keep emailing real users. Notifications are
+one-way (you cannot reply). The relay is a container, so a whole-stack outage
+also silences it — that case is left to the external uptime checker (see
+`EMAILS.md` §10.1).
 
 ## Remote storage (snapshots, DB dumps)
 

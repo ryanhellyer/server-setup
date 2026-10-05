@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
 # =============================================================================
-# authelia-notify-code.sh — show the latest Authelia notification (used as the
-# "email" during TOTP device registration on boxes with no mail server).
+# authelia-notify-code.sh — legacy shim; Authelia notifications now go to
+# Telegram via the mailrelay container (EMAILS.md).
 #
-#   sudo bash scripts/authelia-notify-code.sh          # print + extract links
-#   sudo bash scripts/authelia-notify-code.sh --json   # raw machinery output
+#   sudo bash scripts/authelia-notify-code.sh
 #
-# Authelia is configured with the FILESYSTEM notifier (authelia/configuration.yml
-# → notifier.filesystem.filename = /data/notification.txt, host:
-# ~/www/auth.hellyer.kiwi/notification.txt). When you click "Register device"
-# for a second factor, Authelia would normally email you a confirmation link;
-# instead it writes that email to this file. Read it, open the link in a
-# browser, then the QR code is shown.
+# BACKGROUND: Authelia used to use its FILESYSTEM notifier, writing the
+# TOTP-registration / password-reset "email" to
+# ~/www/auth.hellyer.kiwi/notification.txt, and this script printed it. Authelia
+# now uses the SMTP notifier pointed at `mailrelay`, so those messages arrive in
+# the Telegram chat instead — there is nothing to read here any more.
 #
-# Read-only: it never modifies the notification file.
+# This script is kept so existing docs/automation that call it don't break. If a
+# legacy notification.txt still exists (a box mid-migration), it is printed.
+# Otherwise it just points you at Telegram.
+#
+# Usage: sudo bash scripts/authelia-notify-code.sh [--json]
+#        (--json is accepted for backwards compatibility and ignored)
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -25,26 +28,36 @@ FILE="$WWW_ROOT/auth.hellyer.kiwi/notification.txt"
 
 say()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[!!]\033[0m %s\n' "$*"; }
-die()  { printf '\033[1;31m[xx]\033[0m %s\n' "$*" >&2; exit 1; }
 
-[ -f "$FILE" ] || die "No notification file yet at $FILE.
-     Click 'Register device' in the Authelia portal first, then re-run this."
+case "${1:-}" in
+  -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  --json|"") ;;
+  *) warn "Unknown option: $1"; exit 1 ;;
+esac
 
-if [ ! -s "$FILE" ]; then
-  warn "The notification file is empty."
-  echo "     Click 'Register device' (or 'Reset password') in the portal, then re-run."
+if [ -s "$FILE" ]; then
+  warn "Found a LEGACY Authelia notification file at $FILE"
+  echo "----------------------------------------------------------------------"
+  cat "$FILE"
+  echo "----------------------------------------------------------------------"
+  echo
+  say "This is from the old filesystem notifier. New notifications go to Telegram."
+  echo
+  echo "Links / codes found (newest last):"
+  grep -oE 'https?://[^"[:space:]<>]+' "$FILE" | sort -u | while read -r url; do
+    printf '  %s\n' "$url"
+  done || true
   exit 0
 fi
 
-say "Latest AUTHELIA notification ($FILE)"
-echo "----------------------------------------------------------------------"
-cat "$FILE"
-echo "----------------------------------------------------------------------"
-echo
-say "Links / codes found (newest last):"
-grep -oE 'https?://[^"[:space:]<>]+' "$FILE" | sort -u | while read -r url; do
-  printf '  %s\n' "$url"
-done || true
-echo
-echo "Open the confirmation link in a browser, then scan the QR code into your"
-echo "authenticator app (scan into a SECOND app too, as a backup)."
+say "Authelia notifications now arrive in Telegram"
+cat <<'EOF'
+
+  Authelia's notifier is SMTP -> the `mailrelay` container -> your Telegram
+  chat (see EMAILS.md). When you click "Register device" (or "Reset password")
+  in the portal, read the message in Telegram instead of on the server.
+
+  If it does not arrive, check the relay:
+    pod-logs mailrelay -f
+    sudo bash scripts/provision-mail.sh          # validates config + test
+EOF

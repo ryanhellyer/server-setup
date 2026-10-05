@@ -93,6 +93,8 @@ rewrite_app_env() {
       set_env "$ENV_FILE" REDIS_URL "redis://valkey:6379"
       set_env "$ENV_FILE" REDIS_HOST valkey
       set_env "$ENV_FILE" REDIS_PASSWORD ""
+      # Route app mail through mailrelay -> Telegram (EMAILS.md).
+      set_env "$ENV_FILE" MAILER_DSN "smtp://mailrelay:25"
     }
   elif [ -f "$LOCAL_DIR/.env" ]; then
     say "Rewriting app .env for the container network"
@@ -106,6 +108,18 @@ rewrite_app_env() {
       set_env "$LOCAL_DIR/.env" DB_PASSWORD "$DB_PASS"
     fi
     set_env "$LOCAL_DIR/.env" APP_URL "https://$DOMAIN"
+    if [ "$APP_TYPE" = "laravel" ]; then
+      # Route app mail through mailrelay -> Telegram (EMAILS.md). SMTP is used
+      # (rather than the sendmail transport) because it is unambiguous across
+      # Laravel/Symfony Mailer versions; the relay needs no auth/TLS.
+      set_env "$LOCAL_DIR/.env" MAIL_MAILER smtp
+      set_env "$LOCAL_DIR/.env" MAIL_HOST mailrelay
+      set_env "$LOCAL_DIR/.env" MAIL_PORT 25
+      set_env "$LOCAL_DIR/.env" MAIL_USERNAME ""
+      set_env "$LOCAL_DIR/.env" MAIL_PASSWORD ""
+      set_env "$LOCAL_DIR/.env" MAIL_ENCRYPTION null
+      set_env "$LOCAL_DIR/.env" MAIL_FROM_ADDRESS server@hellyer.kiwi
+    fi
   elif [ -f "$LOCAL_DIR/wp-config.php" ]; then
     say "Rewriting wp-config.php for the container network"
     if [ "$DRY" != 1 ]; then

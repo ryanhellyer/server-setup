@@ -157,8 +157,54 @@ services:
     volumes:
       - ./authelia:/config:ro
       - ${WWW_ROOT:-/home/ryan/www}/auth.hellyer.kiwi:/data
+    # Give the SMTP notifier a relay to talk to on first boot. compose only
+    # orders startup; authelia's own `restart: unless-stopped` covers the race.
+    depends_on:
+      - mailrelay
     networks: [web, backend]
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+
+  # mailrelay — catch-all SMTP sink that forwards every message to Telegram
+  # (EMAILS.md). One destination for WordPress/Laravel PHP mail (via the msmtp
+  # sendmail shim in the php image), Authelia's SMTP notifier, the host's
+  # cron/fail2ban/unattended-upgrades (via the published localhost port), and
+  # any future app that speaks SMTP.
+  #
+  # IMPORTANT: this is on the `web` network, NOT the internal `backend` one —
+  # it needs outbound internet to reach api.telegram.org, and `backend` is
+  # `internal: true` (no egress). The port is bound to 127.0.0.1 only, so it is
+  # never exposed publicly; containers reach it by the name `mailrelay`.
+  mailrelay:
+    build: ./mail
+    container_name: mailrelay
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      MAIL_TELEGRAM_MODE: ${MAIL_TELEGRAM_MODE:-all}
+      MAIL_LOCAL_DOMAINS: ${MAIL_LOCAL_DOMAINS:-hellyer.kiwi,localhost,localhost.localdomain}
+      MAIL_DENY_REGEX: ${MAIL_DENY_REGEX:-}
+      MAIL_ALLOW_REGEX: ${MAIL_ALLOW_REGEX:-}
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-server@hellyer.kiwi}
+      MAIL_MAX_ATTEMPTS: ${MAIL_MAX_ATTEMPTS:-12}
+      MAIL_SPOOL_DIR: /var/spool/mailrelay
+      TZ: ${TZ:-Europe/London}
+    volumes:
+      - mailrelay-spool:/var/spool/mailrelay
+    ports:
+      - "127.0.0.1:2525:25"   # host services (cron/fail2ban/...) only
+    networks: [web]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     deploy:
       resources:
         limits:
@@ -195,6 +241,9 @@ services:
 
 volumes:
   php-socket:
+  # Persisted mailrelay spool: messages that have been accepted but not yet
+  # forwarded to Telegram survive a container restart/crash.
+  mailrelay-spool:
 
 networks:
   web:

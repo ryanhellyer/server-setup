@@ -10,6 +10,11 @@ FROM docker.io/ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Package notes:
+#   * phpredis talks to Valkey (drop-in Redis replacement) over RESP;
+#   * msmtp/msmtp-mta provide /usr/sbin/sendmail, relaying PHP mail() to the
+#     mailrelay container -> Telegram (EMAILS.md; see the ini + msmtprc COPY);
+#   * nano is an editor for `pod-login` (site files are bind-mounted at /var/www).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg \
@@ -29,9 +34,10 @@ RUN apt-get update \
         php8.5-gd \
         php8.5-curl \
         php8.5-xml \
-        # phpredis talks to Valkey (drop-in Redis replacement) over RESP.
         php8.5-redis \
         php8.5-sqlite3 \
+        msmtp \
+        msmtp-mta \
         ffmpeg \
         imagemagick \
         ghostscript \
@@ -39,8 +45,6 @@ RUN apt-get update \
         zip \
         unzip \
         sqlite3 \
-        # Editing convenience: site files are bind-mounted at /var/www, and a
-        # shell in this container now has an editor to hand (pod-login).
         nano \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -61,6 +65,13 @@ RUN curl -fsSL https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-
 COPY 10-opcache.ini      /etc/php/8.5/fpm/conf.d/10-opcache.ini
 COPY 20-fpm-security.ini /etc/php/8.5/fpm/conf.d/20-fpm-security.ini
 COPY fpm-www.conf        /etc/php/8.5/fpm/pool.d/www.conf
+
+# Outbound mail (EMAILS.md): PHP mail() -> /usr/sbin/sendmail (msmtp-mta) ->
+# mailrelay:25 -> Telegram. Install the ini for BOTH SAPIs — CLI matters for
+# `artisan`/queue workers and composer scripts, not just FPM.
+COPY 30-mail.ini /etc/php/8.5/fpm/conf.d/30-mail.ini
+COPY 30-mail.ini /etc/php/8.5/cli/conf.d/30-mail.ini
+COPY msmtprc     /etc/msmtprc
 
 # Site files live on the host under /var/www and are bind-mounted in.
 WORKDIR /var/www

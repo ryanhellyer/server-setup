@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# =============================================================================
+# mail-test — send a test email through the mailrelay chain (EMAILS.md).
+#
+#   mail-test                    # default subject/body
+#   mail-test "my subject" "my body"
+#
+# Hands the message to the host sendmail (msmtp-mta -> mailrelay:2525) when
+# available, otherwise talks SMTP straight to the relay. Check your Telegram
+# chat for the result.
+# =============================================================================
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+REPO_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+[ -f "$REPO_DIR/.env" ] && set -a && . "$REPO_DIR/.env" && set +a
+
+case "${1:-}" in
+  -h|--help) sed -n '2,11p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
+esac
+
+FROM="${MAIL_FROM_ADDRESS:-server@hellyer.kiwi}"
+SUBJECT="${1:-mailrelay test}"
+BODY="${2:-Test message from $(hostname) at $(date)}"
+
+if command -v sendmail >/dev/null 2>&1; then
+  printf 'From: %s\nTo: admin@hellyer.kiwi\nSubject: %s\n\n%s\n' "$FROM" "$SUBJECT" "$BODY" \
+    | sendmail -t
+  echo "Handed the test message to $(command -v sendmail) (msmtp -> mailrelay)."
+  echo "Check Telegram; if nothing arrives: pod-logs mailrelay"
+else
+  python3 - "$FROM" "$SUBJECT" "$BODY" <<'PY'
+import smtplib, sys
+from email.message import EmailMessage
+frm, subject, body = sys.argv[1], sys.argv[2], sys.argv[3]
+msg = EmailMessage()
+msg["From"] = frm
+msg["To"] = "admin@hellyer.kiwi"
+msg["Subject"] = subject
+msg.set_content(body)
+with smtplib.SMTP("127.0.0.1", 2525, timeout=15) as s:
+    s.send_message(msg)
+print("Sent the test message straight to the relay on 127.0.0.1:2525.")
+print("Check Telegram; if nothing arrives: pod-logs mailrelay")
+PY
+fi

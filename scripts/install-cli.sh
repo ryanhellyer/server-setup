@@ -38,7 +38,7 @@ for cmd in "${!CLI_CONTAINER[@]}"; do
   ln -sf "$REPO_DIR/bin/pod-exec" "$DEST_DIR/$cmd"
 done
 # Interactive / status helpers (not part of the command->container map).
-for helper in pod-login pod-logs pod-status pod-restart pod-exec sites cert-status; do
+for helper in pod-login pod-logs pod-status pod-restart pod-exec sites cert-status mail-test; do
   ln -sf "$REPO_DIR/bin/$helper" "$DEST_DIR/$helper"
 done
 
