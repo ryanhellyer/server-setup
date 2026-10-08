@@ -44,6 +44,9 @@ services:
       - ./php/fpm-www.conf:/etc/php/8.5/fpm/pool.d/www.conf:ro
       - php-socket:/run/php
       - ${WWW_ROOT:-/home/ryan/www}:/var/www
+      # Phone-sync content (sshfs mount of u676107), read-only for the Laravel
+      # app at /var/phone-files. Written by the `syncthing` container.
+      - ${PHONE_FILES_ROOT:-/home/ryan/phone-files}:/var/phone-files:ro
       # Per-site logs (~/logs) — same host dir nginx mounts, so application
       # logs are kept OUTSIDE the web roots and never land in a site
       # backup/snapshot. Point Laravel LOG_PATH / WP_DEBUG_LOG / PHP error_log
@@ -125,6 +128,46 @@ services:
         limits:
           cpus: "0.5"
           memory: 256m
+
+  # Syncthing (phone.hellyer.kiwi) — syncs the phone into an sshfs mount of
+  # u676107:/home/phone-files. That mount lives at $PHONE_FILES_ROOT on the
+  # host (outside ~/www), which the php-fpm container also mounts read-only at
+  # /var/phone-files for the Laravel app. The mount is set up by
+  # scripts/storage-mounts.sh; the folder itself is added once through the GUI
+  # (published on 127.0.0.1 only — reach it via an SSH tunnel:
+  #   ssh -L 8384:127.0.0.1:8384 ryan@<host>   then open http://127.0.0.1:8384
+  # ). Config + index DB live under ~/www so the nightly backup snapshots them.
+  #
+  # Runs as PUID/PGID (default 1000:1000 — the `ryan` account the sshfs mount
+  # is mapped to) so it can write into the mount; UMASK=002 keeps files
+  # group/other-readable for php-fpm (www-data). Published ports: 22000 tcp/udp
+  # (file transfer) + 21027/udp (local discovery) — opened in the firewall by
+  # scripts/deploy.sh. A container network is used rather than host mode, which
+  # is why local discovery is published; global discovery/relaying still works.
+  syncthing:
+    image: docker.io/syncthing/syncthing:2.1.6
+    container_name: syncthing
+    hostname: phone-hellyer-kiwi
+    environment:
+      PUID: ${SYNCTHING_PUID:-1000}
+      PGID: ${SYNCTHING_PGID:-1000}
+      UMASK: "002"
+      STGUIADDRESS: "0.0.0.0:8384"
+    volumes:
+      - ${WWW_ROOT:-/home/ryan/www}/phone.hellyer.kiwi/.syncthing:/var/syncthing
+      - ${PHONE_FILES_ROOT:-/home/ryan/phone-files}:/var/sync/files
+    ports:
+      - "127.0.0.1:8384:8384"   # web UI — localhost only (SSH-tunnel to it)
+      - "22000:22000/tcp"       # TCP file transfers
+      - "22000:22000/udp"       # QUIC file transfers
+      - "21027:21027/udp"       # local discovery broadcasts
+    networks: [web]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
 
   # Authelia (auth.hellyer.kiwi) — forward-auth / SSO gate in front of
   # protected vhosts (chat.hellyer.kiwi today). nginx calls it per-request via

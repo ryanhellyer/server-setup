@@ -81,17 +81,25 @@ if command -v ufw >/dev/null 2>&1; then
   ufw allow 22/tcp   >/dev/null 2>&1 || true
   ufw allow 80/tcp   >/dev/null 2>&1 || true
   ufw allow 443/tcp  >/dev/null 2>&1 || true
+  # Syncthing (phone.hellyer.kiwi): TCP + QUIC file transfers and local
+  # discovery. Published container ports, so the routed rules are required too.
+  ufw allow 22000/tcp >/dev/null 2>&1 || true
+  ufw allow 22000/udp >/dev/null 2>&1 || true
+  ufw allow 21027/udp >/dev/null 2>&1 || true
   # Published container ports are DNAT'd, so inbound web traffic traverses
   # ufw's FORWARD chain. Without these, the default "deny (routed)" policy
   # silently drops everything to nginx: the box answers on 22 but 80/443 look
   # closed from the internet.
   ufw route allow proto tcp from any to any port 80  >/dev/null 2>&1 || true
   ufw route allow proto tcp from any to any port 443 >/dev/null 2>&1 || true
+  ufw route allow proto tcp from any to any port 22000 >/dev/null 2>&1 || true
+  ufw route allow proto udp from any to any port 22000 >/dev/null 2>&1 || true
+  ufw route allow proto udp from any to any port 21027 >/dev/null 2>&1 || true
   ufw --force enable >/dev/null 2>&1 || true
   # Let the podman bridge through so image builds (podman build) can reach the
   # network — must be before step 8's build.
   ufw_allow_podman_networks
-  echo "==> firewall enabled (22, 80, 443/tcp + routed web ports + podman nets)"
+  echo "==> firewall enabled (22, 80, 443/tcp, 22000 tcp+udp, 21027/udp + routed ports + podman nets)"
 fi
 
 # ---- 1c. swap: avoid OOM / thrash on small boxes ----
@@ -152,6 +160,14 @@ LOG_ROOT="$(resolve_log_root)"
 mkdir -p "$LOG_ROOT"
 export LOG_ROOT   # so `podman compose` mounts the same path
 echo "==> Log root (host): $LOG_ROOT  (containers see it as $CONTAINER_LOG)"
+
+# Phone sync target: an sshfs mount of u676107:/home/phone-files (set up by
+# scripts/storage-mounts.sh). The `syncthing` container writes it; php-fpm
+# reads it at /var/phone-files. Kept OUTSIDE ~/www so the backup/restore/perms
+# walks never see it.
+PHONE_FILES_ROOT="${PHONE_FILES_ROOT:-$(resolve_admin_home)/phone-files}"
+export PHONE_FILES_ROOT   # so `podman compose` mounts the same path
+echo "==> Phone files root (host): $PHONE_FILES_ROOT  (php-fpm sees it as /var/phone-files)"
 
 # ---- 3. refresh files ----
 # Tarball install (.tarball marker) -> re-download. Git clone -> git pull.
@@ -277,6 +293,27 @@ mkdir -p "$WWW_ROOT/stats.hellyer.kiwi"
 # has no nginx root. (provision-authelia.sh also creates it, so a standalone
 # run of that script is sufficient when not doing a full deploy.)
 mkdir -p "$WWW_ROOT/auth.hellyer.kiwi"
+
+# ---- 6d. phone.hellyer.kiwi (Syncthing + Laravel web root) ----
+# .syncthing holds the Syncthing config/DB; create it owned by the admin user
+# (the PUID the container runs as) BEFORE the container starts, or it
+# crash-loops on a root-owned dir. public/ is the Laravel web root (the app is
+# installed later). The synced files live OUTSIDE ~/www in $PHONE_FILES_ROOT
+# (an sshfs mount of u676107:/home/phone-files, scripts/storage-mounts.sh);
+# trigger its automount now so the containers get the real mount, not an empty
+# directory.
+_phone_dir="$WWW_ROOT/phone.hellyer.kiwi"
+_phone_user="$(resolve_admin_user)"
+install -d -o "$_phone_user" -g "$(id -gn "$_phone_user")" -m 2775 "$_phone_dir/.syncthing"
+install -d -o "$_phone_user" -g www-data -m 2775 "$_phone_dir/public"
+[ -e "$PHONE_FILES_ROOT" ] \
+  || install -d -o "$_phone_user" -g "$(id -gn "$_phone_user")" -m 2775 "$PHONE_FILES_ROOT"
+if command -v systemctl >/dev/null 2>&1 && ! mountpoint -q "$PHONE_FILES_ROOT"; then
+  systemctl start "$(systemd-escape -p --suffix=automount "$PHONE_FILES_ROOT")" >/dev/null 2>&1 || true
+  ls "$PHONE_FILES_ROOT" >/dev/null 2>&1 || true
+fi
+mountpoint -q "$PHONE_FILES_ROOT" \
+  || echo "  (phone-files mount not active yet — run: sudo bash scripts/storage-mounts.sh)"
 
 # ---- 7. TEST MODE: temporary certs ----
 # Nothing here runs in production — set DEPLOY_ENV=production in .env and

@@ -16,6 +16,7 @@ block's maps (root, log path, etc.).
 | `conf.d/protected-multisite.conf` | invoices.hellyer.kiwi, admin.ryan.hellyer.kiwi (Authelia)      |
 | `conf.d/dad-site.conf`         | dad.hellyer.kiwi (Authelia)                                       |
 | `conf.d/storage-site.conf`     | storage.hellyer.kiwi (Authelia)                                   |
+| `conf.d/phone.hellyer.kiwi.conf` | phone.hellyer.kiwi (Laravel, Authelia)                          |
 | `conf.d/auth-site.conf`        | auth.hellyer.kiwi (Authelia login portal)                         |
 | `conf.d/stats-site.conf`       | stats.hellyer.kiwi (self-hosted GoatCounter)                      |
 | `conf.d/redirects.conf`        | all 301-redirect domains                                          |

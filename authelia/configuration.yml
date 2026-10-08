@@ -115,6 +115,7 @@ access_control:
         - 'health.hellyer.kiwi'
         - 'secure.hellyer.kiwi'
         - 'dad.hellyer.kiwi'
+        - 'phone.hellyer.kiwi'
       policy: 'two_factor'
 
 session:

@@ -6,8 +6,8 @@
 #
 # What it does:
 #   1. pulls the upstream images (mariadb / valkey / open-webui / goatcounter /
-#      authelia / certbot) by their tags — a floating tag resolves to the
-#      newest image;
+#      syncthing / authelia / certbot) by their tags — a floating tag resolves
+#      to the newest image;
 #   2. rebuilds the locally-built images (php / nginx / node / mailrelay) from
 #      their Containerfiles. The build re-runs `apt-get update && install`, so
 #      the Ubuntu 24.04 packages inside those images get their latest updates;
@@ -51,6 +51,7 @@ UPSTREAM=(
   docker.io/valkey/valkey:8-alpine
   ghcr.io/open-webui/open-webui:main
   docker.io/arp242/goatcounter:2.7
+  docker.io/syncthing/syncthing:2.1.6
   docker.io/authelia/authelia:4.39
   docker.io/certbot/certbot:latest
 )

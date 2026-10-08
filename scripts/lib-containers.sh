@@ -8,7 +8,7 @@
 #
 # Keep the names in sync with compose.yaml (the deployment source of truth —
 # services: nginx / php (container_name: php-fpm) / node / mariadb / valkey /
-# open-webui / goatcounter / authelia / mailrelay).
+# open-webui / goatcounter / syncthing / authelia / mailrelay).
 # =============================================================================
 
 # ---- canonical container names (must match compose.yaml) ----
@@ -19,6 +19,7 @@ CONTAINER_VALKEY="valkey"
 CONTAINER_NODE="node"
 CONTAINER_OPENWEBUI="open-webui"
 CONTAINER_GOATCOUNTER="goatcounter"
+CONTAINER_SYNCTHING="syncthing"
 CONTAINER_AUTHELIA="authelia"
 CONTAINER_MAILRELAY="mailrelay"
 
@@ -31,6 +32,7 @@ ALL_CONTAINERS=(
   "$CONTAINER_NODE"
   "$CONTAINER_OPENWEBUI"
   "$CONTAINER_GOATCOUNTER"
+  "$CONTAINER_SYNCTHING"
   "$CONTAINER_AUTHELIA"
   "$CONTAINER_MAILRELAY"
 )

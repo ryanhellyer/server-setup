@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # storage-mounts.sh — set up passwordless SSH to the remote storage boxes and
-# mount the primary box's gmail + databases shares into the admin user's home.
+# mount the required shares into the admin user's home / web root.
 #
 #   sudo bash scripts/storage-mounts.sh
 #
@@ -12,9 +12,14 @@
 #      backup box), so connecting never asks for a password. Asks for each
 #      box's password ONCE. Existing keys are PRESERVED — Hetzner's
 #      `install-ssh-key` appends, it never replaces.
-#   3. Writes /etc/fstab entries for the primary box's mounts only (_netdev,
-#      x-systemd.automount, reconnect), then mounts them now. The secondary
-#      box and the backup box are authorised but NOT mounted.
+#   3. Writes /etc/fstab entries for the mounts below (_netdev,
+#      x-systemd.automount, reconnect), then mounts them now:
+#        - primary box's /home/gmail       -> ~/gmail
+#        - primary box's /home/databases   -> ~/mariadbs
+#        - backup box's  /home/phone-files -> ~/phone-files
+#          (the phone.hellyer.kiwi Syncthing target; php-fpm reads it at
+#          /var/phone-files). The secondary box and the backup box are
+#          otherwise authorised but NOT mounted.
 #
 # Config (override in .env, all optional; legacy HETZNER_* names also accepted):
 #   STORAGE_PRIMARY_HOST    default u458814.your-storagebox.de
@@ -23,6 +28,7 @@
 #   STORAGE_SECONDARY_USER  default u513410
 #   BACKUP_HOST             default u676107.your-storagebox.de (backup box)
 #   BACKUP_USER             default u676107
+#   PHONE_FILES_REMOTE      default /home/phone-files (on the backup box)
 #   STORAGE_PORT            default 23 (all three boxes)
 #   STORAGE_MOUNT_HOME      default: home of the invoking user (~)
 #   STORAGE_MOUNT_USER      default: $SUDO_USER, else ryan, else current user
@@ -53,14 +59,20 @@ SECONDARY_USER="${STORAGE_SECONDARY_USER:-${HETZNER_SECONDARY_USER:-u513410}}"
 BACKUP_HOST="${BACKUP_HOST:-u676107.your-storagebox.de}"
 BACKUP_USER="${BACKUP_USER:-u676107}"
 
-# All three boxes get the key; only the primary box gets mounts.
+# All three boxes get the key; the primary and backup boxes get mounts.
 BOXES=("$PRIMARY_USER@$PRIMARY_HOST" "$SECONDARY_USER@$SECONDARY_HOST" \
        "$BACKUP_USER@$BACKUP_HOST")
-# mount spec: "user@host:remote-dir  local-folder-name"
+# mount spec: "user@host:remote-dir  local-path-relative-to-home"
 # The box's /home/databases is mounted at ~/mariadbs (the canonical local name
 # used by DB_DUMP_DIR / backup.sh); ~/databases no longer exists.
+#
+# phone-files: u676107:/home/phone-files (the BACKUP box) is mounted at
+# ~/phone-files, OUTSIDE the web root. The `syncthing` container writes the
+# phone into it and the php-fpm container reads it at /var/phone-files. Override
+# the remote dir with PHONE_FILES_REMOTE if it differs.
 MOUNT_SPECS=("$PRIMARY_USER@$PRIMARY_HOST:/home/gmail gmail" \
-             "$PRIMARY_USER@$PRIMARY_HOST:/home/databases mariadbs")
+             "$PRIMARY_USER@$PRIMARY_HOST:/home/databases mariadbs" \
+             "$BACKUP_USER@$BACKUP_HOST:${PHONE_FILES_REMOTE:-/home/phone-files} phone-files")
 
 # ---- where to mount: the invoking user's home (~) ----
 resolve_mount_user() {
@@ -149,7 +161,7 @@ for target in "${BOXES[@]}"; do
   install_key "$target" || exit 1
 done
 
-# ---- 2. /etc/fstab: persistent automounts for the primary box (idempotent) ----
+# ---- 2. /etc/fstab: persistent automounts (idempotent) ----
 FSTAB=/etc/fstab
 BEGIN='# BEGIN server-setup storage mounts'
 END='# END server-setup storage mounts'
@@ -230,5 +242,6 @@ for spec in "${MOUNT_SPECS[@]}"; do
 done
 
 echo
-echo "Done. Passwordless access to all three boxes; u458814 gmail+mariadbs mounted under $MOUNT_HOME."
+echo "Done. Passwordless access to all three boxes."
+echo "Mounted under $MOUNT_HOME: gmail, mariadbs (primary box) and phone-files (backup box)."
 echo "Mounts are in /etc/fstab and reappear automatically after reboot."

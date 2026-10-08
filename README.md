@@ -141,7 +141,8 @@ sudo ./install/setup.sh                 # menu: pick "Full install / deploy / up
 | Restore every site found in the snapshot | `sudo bash scripts/migrate-sites.sh [--dry-run]` |
 | Build a site's front-end assets (Vite) in the `node` container | `sudo bash scripts/build-assets.sh <site> [--force]` (auto-run by `provision-site.sh`) |
 | Copy the snapshot's non-site files (backup scripts, configs, cron) into `~/tools` | `sudo bash scripts/provision-extras.sh [--force]` |
-| Connect the storage boxes + mount `gmail`, `mariadbs` | `sudo bash scripts/storage-mounts.sh` |
+| Connect the storage boxes + mount `gmail`, `mariadbs`, phone files | `sudo bash scripts/storage-mounts.sh` |
+| Set up + start the phone.hellyer.kiwi Syncthing sync | `sudo bash scripts/provision-syncthing.sh` |
 | Configure Email → Telegram + send a test | `sudo bash scripts/provision-mail.sh` (or `mail-test`) |
 | Create/refresh the admin user (`ryan`) with a key + passwordless sudo | `sudo bash scripts/create-admin-user.sh` |
 | Harden SSH (keys only) / revert | `sudo bash scripts/harden-sshd.sh [--revert]` |
@@ -203,7 +204,8 @@ sudo bash scripts/install-login-help.sh --remove   # remove it + restore Ubuntu'
 * **Containers:** nothing updates the images by itself — `compose up` reuses the
   local image. `server-update.timer` runs `scripts/update.sh` weekly (Sun 04:00,
   up to 30 min staggered) to pull the upstream images
-  (`mariadb`/`valkey`/`open-webui`/`certbot`) and rebuild `php`/`nginx`/`node`,
+  (`mariadb`/`valkey`/`open-webui`/`goatcounter`/`syncthing`/`authelia`/`certbot`)
+  and rebuild `php`/`nginx`/`node`/`mailrelay`,
   which re-runs `apt` so the Ubuntu packages *inside* the images are updated.
   The recreate is applied by reloading `server-stack.service`
   (`systemctl reload server-stack.service`) so the container processes stay in
@@ -489,13 +491,65 @@ Notes: `vector_db/` is kept by default because the container path
 misbehave. The container is localhost-published on `127.0.0.1:3000` for health
 checks/debugging; nginx reaches it by name on the compose network.
 
+## Phone files (`phone.hellyer.kiwi`)
+
+`phone.hellyer.kiwi` is a Laravel site (the app is installed later) behind
+**Authelia**. The phone syncs its files into a directory that lives **outside
+the web root**, and the Laravel app reads that directory directly through
+php-fpm — nginx does not serve it.
+
+The chain:
+
+* **Syncthing** (the `syncthing` container) syncs the phone into
+  **`~/phone-files`** (`PHONE_FILES_ROOT`).
+* That directory is an **sshfs mount of `u676107:/home/phone-files`**
+  (`scripts/storage-mounts.sh`), so the bytes physically live on the backup
+  box — Syncthing just writes through the mount. (u676107 stays a Storage Box;
+  it never runs Syncthing itself.)
+* The same host directory is bind-mounted **read-only into php-fpm at
+  `/var/phone-files`**, so the Laravel app can read the synced files.
+* The web root is `~/www/phone.hellyer.kiwi/public/` — install the Laravel app
+  into `~/www/phone.hellyer.kiwi/` (`nginx/conf.d/phone.hellyer.kiwi.conf`).
+* Syncthing's config/index live in `~/www/phone.hellyer.kiwi/.syncthing` (so
+  the nightly `~/www` snapshot backs them up).
+
+> The synced files are deliberately **outside `~/www`**: the `~/www` backup,
+> restore and `fix-perms` walks then never touch the mount (no re-copying the
+> data off/onto u676107, no accidental deletes through the mount).
+
+Set it up:
+
+```bash
+# 1. mount u676107:/home/phone-files (asks for that box's password once):
+sudo bash scripts/storage-mounts.sh
+# 2. create the dirs, seed SYNCTHING_PUID/PGID in .env, start the container:
+sudo bash scripts/provision-syncthing.sh
+```
+
+Then pair the phone. The GUI is published on **`127.0.0.1:8384` only**; reach it
+through an SSH tunnel and set a GUI password:
+
+```bash
+ssh -L 8384:127.0.0.1:8384 ryan@<host>   # then http://127.0.0.1:8384
+# add the phone as a device, and share a folder with path:  /var/sync/files
+```
+
+Firewall: `deploy.sh` opens `22000/tcp`, `22000/udp` (transfer) and `21027/udp`
+(discovery). TLS comes from the shared `pressabl` cert — `phone.hellyer.kiwi`
+is listed in `certbot/domains.txt`.
+
+> **Read access:** php-fpm runs as `www-data`, so the mounted tree must be
+> readable by it. Syncthing writes with `UMASK=002` (`664`/`775`), which is
+> world-readable; make sure `/home/phone-files` on u676107 is traversable
+> (`chmod o+x`) if the app cannot see inside it.
+
 ## Authelia (forward-auth / SSO)
 
 **Authelia** gates access to protected vhosts: `chat.hellyer.kiwi`,
 `storage.hellyer.kiwi`, `invoices.hellyer.kiwi`, `admin.ryan.hellyer.kiwi`,
-`health.hellyer.kiwi`, `secure.hellyer.kiwi` and `dad.hellyer.kiwi`. On
-`secure`/`dad` it replaces the old HTTP basic auth. The gate is reusable for
-future sites/pages.
+`health.hellyer.kiwi`, `secure.hellyer.kiwi`, `dad.hellyer.kiwi` and
+`phone.hellyer.kiwi`. On `secure`/`dad` it replaces the old HTTP basic auth.
+The gate is reusable for future sites/pages.
 
 * Container: `compose.yaml` service `authelia`, config in `authelia/`, data
   (SQLite DB + user database + notifier) at `~/www/auth.hellyer.kiwi:/data` so
