@@ -1,0 +1,44 @@
+# =============================================================================
+# Syncthing phone pairing — step-by-step
+# =============================================================================
+
+# Server device ID (phone-hellyer-kiwi):
+#   2BUS677-OHRNLEC-3PPOTSV-ZO5P4BK-XK6Y52H-SRYNIO3-2QPDP5C-ZL5RDAU
+
+# --- Step 1: Open the server GUI (run on your laptop, keep it open) ---
+ssh -L 8384:127.0.0.1:8384 ryan@hellyer.kiwi
+# then browse: http://127.0.0.1:8384
+
+# --- Step 2: Get the phone's device ID ---
+#    In the phone app: menu -> "Show device ID" (its own "this device" ID).
+#    The server ID to type into the phone is the one at the top of this file.
+
+# --- Step 3: Add each other as devices ---
+#    Server GUI -> "Add Remote Device" -> paste the phone's device ID -> Save.
+#    Phone -> Devices -> "+" -> paste the server device ID -> Save.
+#    Accept the "new device" prompts on both sides.
+#    (If the phone ID is not accepted, check for typos / dashes.)
+
+# --- Step 4: Share the folder ---
+#    Server GUI -> "Add Folder":
+#       Folder ID:  phone-files
+#       Path:       /var/sync/files     <- the CONTAINER path, not ~/phone-files
+#       Sharing tab -> tick the phone device -> Save.
+#    Phone -> accept the shared "phone-files" folder -> choose a local folder
+#       (e.g. Camera/DCIM or a dedicated folder).
+#    For a phone backup: set phone = "Send Only", server = "Receive Only".
+#    Recommended: enable File Versioning -> Staggered on the server folder.
+
+# --- Step 5: Verify ---
+mountpoint -q ~/phone-files && ls -la ~/phone-files   # expect .stfolder + files
+curl -fsS -H "X-API-Key: obnzz3MURRiReTWEaWmC6Tg6bWijWJfk" \
+  http://127.0.0.1:8384/rest/system/connections         # expect phone connected
+
+# --- Notes ---
+# * Server is Syncthing v2. Use the maintained Syncthing-Fork (v2.x) app on the
+#   phone to match; if the phone app is the old official v1.x, upgrade first.
+# * GUI currently has no password and is localhost-only; the SSH tunnel in
+#   Step 1 is the only protection. Set a GUI user/password if you want.
+# * Direct connections need inbound 22000/tcp, 22000/udp, 21027/udp open (ufw
+#   rules are missing right now -> re-run: sudo bash scripts/deploy.sh, plus the
+#   Hetzner Cloud Firewall). Without them, sync still works via public relays.
