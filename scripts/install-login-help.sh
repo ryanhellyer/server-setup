@@ -156,6 +156,8 @@ fi
 [ -n "$next_run" ] && printf '    next run     : %s\n' "$next_run"
 printf '    run now      : sudo systemctl start server-backup.service\n'
 printf '    dry run      : sudo bash %s/scripts/backup.sh --dry-run\n' "$REPO_DIR"
+printf '    full DB dump : sudo bash %s/scripts/backup.sh --db-only --force\n' "$REPO_DIR"
+printf '                   every DB -> %s/<db>-YYYY-MM-DD.sql.gz\n' "$DUMP_DIR"
 printf '    restore      : sudo bash %s/scripts/restore.sh --from-backup [DATE] [www|tools|mariadbs]\n' "$REPO_DIR"
 
 # --- TLS certificates (local files only) -----------------------------------
