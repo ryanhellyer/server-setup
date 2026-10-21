@@ -60,6 +60,7 @@ GitHub; see step 4). `--host` is the only required flag.
 ```bash
 ./bootstrap.sh --host 203.0.113.10        # install (new box) or update, then the menu
 ./bootstrap.sh --host box.example.com --no-harden
+./bootstrap.sh --host box.example.com --update    # update everything, no menu
 ```
 
 What it does, in order:
@@ -75,11 +76,14 @@ What it does, in order:
    user's home (`~/server-setup`) it **reinstalls** — refreshes the files in
    place (tarball re-download, or `git pull` for git installs) — then opens the
    on-server menu. The refresh is **files-only**; it never re-provisions
-   sites/DBs (that's menu option 1).
+   sites/DBs (that's menu option 1). Menu option 5 is the safe update (images +
+   container OS packages, no data changes); `--update` runs that path directly
+   without opening the menu.
 
-Flags: `--user`, `--admin-user`, `--port`, `--identity`, `--no-harden`.
-`--install` is accepted for compatibility (install-or-update is now always what
-runs). The password is entered by `ssh` and never stored.
+Flags: `--user`, `--admin-user`, `--port`, `--identity`, `--update`,
+`--no-harden` (`--update` implies `--no-harden`). `--install` is accepted for
+compatibility (install-or-update is now always what runs). The password is
+entered by `ssh` and never stored.
 
 > Changed your mind? `sudo bash scripts/harden-sshd.sh --revert` restores
 > password authentication.
@@ -94,10 +98,13 @@ files-only, so generated files/secrets (`.env`, rendered configs, certs) are
 safe; it does **not** re-provision sites/DBs. `SETUP_NO_REFRESH=1` skips it. The
 menu:
 
-- **1)** full deploy / update the stack
+- **1)** full re-deploy — re-imports every site + DB from the latest snapshot
+  (overwrites live site files and databases)
 - **2)** add a new site
 - **3)** back up
 - **4)** restore from backup
+- **5)** update everything — images + container OS packages, then restart the
+  stack; never touches site data
 
 Everything else is a direct script call (the SSH login banner lists them too);
 see the **Day-to-day** table below for the exact commands — TLS
@@ -115,7 +122,7 @@ curl -fsSL https://github.com/ryanhellyer/server-setup2/archive/refs/heads/maste
   tar -xz --strip-components=1 -C ~/server-setup
 cd ~/server-setup
 cp .env.example .env      # scripts/deploy.sh does this (with generated secrets) automatically
-sudo ./install/setup.sh                 # menu: pick "Full install / deploy / update"
+sudo ./install/setup.sh                 # menu: 1 = re-deploy, 5 = safe update
 ```
 
 > **Config templates:** `nginx/nginx.conf`, `php/fpm-www.conf` and `maria/my.cnf`
@@ -128,8 +135,9 @@ sudo ./install/setup.sh                 # menu: pick "Full install / deploy / up
 
 | Thing | Command |
 |---|---|
-| Menu: deploy, add a site, backup, restore | `sudo ./install/setup.sh` |
-| Deploy / update the stack (no menu) | `sudo bash scripts/deploy.sh` (refreshes files from the tarball, keeps `.env`) |
+| Menu: deploy, add a site, backup, restore, update | `sudo ./install/setup.sh` |
+| Full re-deploy (no menu) — re-imports sites + DBs from snapshots | `sudo bash scripts/deploy.sh` (refreshes files from the tarball, keeps `.env`) |
+| Update the whole server from your laptop (files + images + OS packages, no data changes) | `./bootstrap.sh --host <ip> --update` |
 | Refresh images + container OS packages (no data changes) | `sudo bash scripts/update.sh` (weekly `server-update.timer`) |
 | Add a site (no menu) | `sudo bash scripts/new-site.sh <domain> <type>` |
 | Back up (off-site snapshots + DB dumps) | `sudo bash scripts/backup.sh` |
@@ -203,18 +211,34 @@ sudo bash scripts/install-login-help.sh --remove   # remove it + restore Ubuntu'
   kernels + auto-installed dependencies are cleaned up.
 * **Containers:** nothing updates the images by itself — `compose up` reuses the
   local image. `server-update.timer` runs `scripts/update.sh` weekly (Sun 04:00,
-  up to 30 min staggered) to pull the upstream images
-  (`mariadb`/`valkey`/`open-webui`/`goatcounter`/`syncthing`/`authelia`/`certbot`)
-  and rebuild `php`/`nginx`/`node`/`mailrelay`,
-  which re-runs `apt` so the Ubuntu packages *inside* the images are updated.
+  up to 30 min staggered). It:
+  * pulls the upstream images
+    (`mariadb`/`valkey`/`open-webui`/`goatcounter`/`syncthing`/`authelia`/`certbot`)
+    **and** the base images used by local builds (`ubuntu:24.04`, `node:22-slim`);
+  * re-renders the configs from their templates;
+  * rebuilds `php`/`nginx`/`node`/`mailrelay` with `--no-cache`, so
+    `apt-get update && install` really runs and container OS packages (including
+    PHP patch releases) are installed. Without `--no-cache`, the cached apt
+    layer is reused and the update is a no-op;
+  * recreates the containers. podman-compose compares image *tags*, not image
+    IDs, so `up -d` alone leaves old containers running after a rebuild; the
+    supervisor's `ExecReload` uses `--force-recreate`, and the script also
+    removes any container still on an old image (plus dependents such as
+    nginx -> php-fpm) and reloads again.
+
   The recreate is applied by reloading `server-stack.service`
   (`systemctl reload server-stack.service`) so the container processes stay in
   the stack supervisor's persistent cgroup; running `compose up` directly from
   the timer job would let systemd tear the job's cgroup down on exit and kill
-  the containers. The script also verifies every expected container is running
-  after the update.
-  It does **not** re-provision sites, so site data is untouched. Logs:
-  `/var/log/server-setup/update.log`.
+  the containers. `TimeoutStartSec=1h` is set on the timer's service because a
+  no-cache rebuild takes minutes (systemd's default oneshot timeout is 90s).
+  The script verifies every expected container is running and logs the live PHP
+  version after the update. It does **not** re-provision sites, so site data is
+  untouched. Logs: `/var/log/server-setup/update.log`.
+
+  Run the same thing on demand with menu option 5, `sudo bash scripts/update.sh`,
+  or from your laptop with `./bootstrap.sh --host <ip> --update` (the last one
+  also refreshes the repo files first).
 
 ### Firewall (ufw) and the containers
 

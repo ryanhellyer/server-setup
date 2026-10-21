@@ -30,7 +30,11 @@
 #
 # Menu options delegate to existing scripts, so the automation path is unchanged:
 #   sudo bash scripts/deploy.sh        # full deploy (cron/automation friendly)
+#   sudo bash scripts/update.sh        # safe update: images + OS packages, no data
 #   sudo bash scripts/new-site.sh ...  # add a site without the menu
+#
+# Non-interactive update (used by `bootstrap.sh --update`):
+#   sudo env SETUP_UPDATE=1 bash install/setup.sh
 # =============================================================================
 set -euo pipefail
 
@@ -38,6 +42,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 ok()  { printf '\033[1;32m[ok]\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[!!]\033[0m %s\n' "$*"; }
 
 # Read from /dev/tty so prompts work even when piped in via curl | bash.
 tty_read() { read -r "$1" < /dev/tty || true; }
@@ -211,18 +216,9 @@ if [ "${SETUP_ALLOW_UNSUPPORTED:-0}" != "1" ]; then
   fi
 fi
 
-# The menu is interactive — without a usable terminal, tell the caller to use
-# the automation path instead of looping on failed reads. (Testing the node with
-# `[ -e /dev/tty ]` is not enough: the node exists even with no controlling tty.)
-if ! { : < /dev/tty; } 2>/dev/null; then
-  echo "No terminal available (piped/automation). Run the scripts directly:"
-  echo "  sudo bash scripts/deploy.sh"
-  echo "  sudo bash scripts/new-site.sh <domain> <type>"
-  echo "  sudo bash scripts/backup.sh   |   sudo bash scripts/restore.sh"
-  echo "Other host tasks (TLS, systemd units, CLI tools, status, logs, storage"
-  echo "mounts, SSH hardening): see the SSH login banner or README.md."
-  exit 1
-fi
+# The menu is interactive. The terminal check lives below, AFTER the file
+# refresh and the SETUP_UPDATE one-shot, so those work over plain `ssh host
+# 'command'` (no tty) as well.
 
 # ---- reinstall: re-running the installer on a server that already has the
 # repo updates the files in place (tarball re-download, or git pull for git
@@ -261,15 +257,44 @@ if [ "${SETUP_NO_REFRESH:-0}" != "1" ]; then
   fi
 fi
 
+# ---- non-interactive one-shot: refresh files, then update the server ----
+# Used by `bootstrap.sh --update` and directly:
+#   sudo env SETUP_UPDATE=1 bash install/setup.sh
+# Safe: images + container OS packages only; sites/DBs are never touched.
+if [ "${SETUP_UPDATE:-0}" = "1" ]; then
+  say "Updating the server (images + container OS packages; site data untouched)"
+  if [ "$(id -u)" -eq 0 ]; then
+    exec bash "$REPO_DIR/scripts/update.sh"
+  else
+    exec sudo bash "$REPO_DIR/scripts/update.sh"
+  fi
+fi
+
+# The menu is interactive — without a usable terminal, tell the caller to use
+# the automation path instead of looping on failed reads. (Testing the node with
+# `[ -e /dev/tty ]` is not enough: the node exists even with no controlling tty.)
+if ! { : < /dev/tty; } 2>/dev/null; then
+  echo "No terminal available (piped/automation). Run the scripts directly:"
+  echo "  sudo env SETUP_UPDATE=1 bash install/setup.sh   # update images + packages"
+  echo "  sudo bash scripts/deploy.sh"
+  echo "  sudo bash scripts/new-site.sh <domain> <type>"
+  echo "  sudo bash scripts/backup.sh   |   sudo bash scripts/restore.sh"
+  echo "Other host tasks (TLS, systemd units, CLI tools, status, logs, storage"
+  echo "mounts, SSH hardening): see the SSH login banner or README.md."
+  exit 1
+fi
+
 show_menu() {
   echo
   echo "server-setup — what would you like to do?"
   echo "------------------------------------------"
-  echo " 1) Full install / deploy / update the stack"
+  echo " 1) Full install / re-deploy (re-imports sites + DBs from snapshots)"
   echo " 2) Add a new site"
   echo " 3) Back up"
   echo " 4) Restore from backup"
+  echo " 5) Update everything (images + OS packages; keeps site data)"
   echo " 0) Quit"
+  echo " (5 is the safe update; 1 overwrites live site files + DBs from the snapshot)"
   echo
   echo "Other tasks now run as scripts — see the SSH login banner or README"
   echo "for the exact commands (TLS, systemd units, CLI tools, status, logs,"
@@ -310,6 +335,7 @@ while true; do
     2) add_site ;;
     3) sudo bash scripts/backup.sh ;;
     4) sudo bash scripts/restore.sh ;;
+    5) sudo bash scripts/update.sh ;;
     0|q|quit) echo "Bye."; exit 0 ;;
     *) echo "Invalid choice." ;;
   esac

@@ -7,10 +7,13 @@
 # `podman compose up -d` / `down` for the whole stack, so compose stays the
 # source of truth and the containers' own `restart:` policies handle crashes.
 # The unit stays active after `up` (RemainAfterExit=yes) and exposes an
-# `ExecReload` that runs `up -d --build`; anything that recreates containers
-# (scripts/update.sh) must go through `systemctl reload server-stack.service`
-# so the conmon processes live in this persistent cgroup and not in the
-# transient cgroup of the calling timer job (which systemd kills on exit).
+# `ExecReload` that runs `up -d --build --force-recreate`; anything that
+# recreates containers (scripts/update.sh) must go through
+# `systemctl reload server-stack.service` so the conmon processes live in this
+# persistent cgroup and not in the transient cgroup of the calling timer job
+# (which systemd kills on exit). --force-recreate is required because
+# podman-compose compares image *tags*, not image IDs: a rebuilt
+# `localhost/server-setup_php:latest` otherwise keeps the old container.
 # Older installs generated one `container-<name>.service` per container with the
 # deprecated `podman generate systemd`. Those units were Type=forking and pinned
 # each container's ID in PIDFile=, so they broke every time compose recreated a
@@ -91,7 +94,7 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=$PWD
 ExecStart=${COMPOSE[*]} -f $COMPOSE_FILE up -d
-ExecReload=${COMPOSE[*]} -f $COMPOSE_FILE up -d --build
+ExecReload=${COMPOSE[*]} -f $COMPOSE_FILE up -d --build --force-recreate
 ExecStop=${COMPOSE[*]} -f $COMPOSE_FILE down
 TimeoutStartSec=600
 TimeoutStopSec=120
@@ -157,8 +160,10 @@ echo "==> wrote /etc/logrotate-server-setup.conf (logs under $LOG_ROOT, 50M cap)
 # parent of a long-lived process (e.g. `podman compose up`, which leaves conmon
 # running) — it would be signalled/killed on exit. Recreate the stack through
 # server-stack.service (`systemctl reload server-stack.service`) instead.
-write_job() { # "$1" name, "$2" service desc, "$3" exec, "$4" timer desc, "$5" OnCalendar, "$6" delay
-  local name="$1" sdesc="$2" exec="$3" tdesc="$4" cal="$5" delay="$6"
+write_job() { # "$1" name, "$2" service desc, "$3" exec, "$4" timer desc, "$5" OnCalendar, "$6" delay, ["$7" TimeoutStartSec]
+  local name="$1" sdesc="$2" exec="$3" tdesc="$4" cal="$5" delay="$6" timeout="${7:-}"
+  local timeout_line=""
+  [ -n "$timeout" ] && timeout_line="TimeoutStartSec=$timeout"
   cat > "$SYSTEMD_DIR/$name.service" <<EOF
 [Unit]
 Description=$sdesc
@@ -166,6 +171,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+$timeout_line
 ExecStart=$exec
 EOF
   cat > "$SYSTEMD_DIR/$name.timer" <<EOF
@@ -196,15 +202,18 @@ write_job "certbot-renew" \
   "run the server-setup TLS certificate renewal" \
   "*-*-* 00,12:00:00" "30m"
 
-# Weekly image/OS refresh: pull upstream images + rebuild the local ones
-# (which re-runs apt, updating the Ubuntu packages inside the containers) and
-# recreate anything changed. Sunday 04:00, staggered up to 30 min. This does
-# NOT run provisioning, so site data is untouched.
+# Weekly image/OS refresh: pull upstream + base images, rebuild the local ones
+# with --no-cache (which really re-runs apt, so container OS packages and PHP
+# patch releases are installed) and recreate the containers from the new
+# images. Sunday 04:00, staggered up to 30 min. This does NOT run provisioning,
+# so site data is untouched. TimeoutStartSec is raised because a no-cache
+# rebuild can take several minutes (systemd's default oneshot timeout is 90s,
+# which would kill the update half-way).
 write_job "server-update" \
   "server-setup weekly image update" \
   "/bin/bash $PWD/scripts/update.sh" \
   "pull/build/recreate the stack weekly" \
-  "Sun *-*-* 04:00:00" "30m"
+  "Sun *-*-* 04:00:00" "30m" "1h"
 
 # Hourly log-rotation check. The config is `daily` + `maxsize 50M`, so a normal
 # day rotates once while a runaway log is cut as soon as it passes 50M (checked

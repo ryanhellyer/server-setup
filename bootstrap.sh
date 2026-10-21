@@ -11,10 +11,14 @@
 #      the repo is already in the admin user's home (~/server-setup) — refreshes
 #      the files in place and opens the on-server menu for full remote control.
 #      So a plain run is also the "update an installed server" command.
+#   6. With --update: refreshes the files and updates the whole server (images +
+#      container OS packages, stack restart) without opening the menu. Site
+#      files and databases are never touched.
 #
 #   ./bootstrap.sh --host 203.0.113.10
 #   ./bootstrap.sh --host box.example.com --user root --admin-user ryan
 #   ./bootstrap.sh --host box.example.com --no-harden   # skip sshd hardening
+#   ./bootstrap.sh --host box.example.com --update      # update everything, no menu
 #
 # The password is entered by ssh itself, once, and is never stored.
 #
@@ -26,6 +30,9 @@
 #   --identity FILE    private key to use (defaults to agent, then ~/.ssh/id_*)
 #   --install          accepted for compatibility (install-or-update is now
 #                      always what runs; the installer detects which is needed)
+#   --update           refresh files, then update images + container OS
+#                      packages and restart the stack; keeps all site data.
+#                      Implies --no-harden.
 #   --no-harden        do not disable SSH password authentication
 #   -h, --help         show this help
 # =============================================================================
@@ -45,6 +52,7 @@ TARGET_USER="root"
 ADMIN_USER="ryan"
 IDENTITY=""
 DO_HARDEN=1
+DO_UPDATE=0
 SETUP_URL="https://raw.githubusercontent.com/ryanhellyer/server-setup/master/install/setup.sh"
 # INSTALL_DIR is resolved after option parsing (it depends on --admin-user).
 INSTALL_DIR=""
@@ -57,11 +65,17 @@ while [ $# -gt 0 ]; do
     --admin-user) ADMIN_USER="${2:?--admin-user needs a value}"; shift 2 ;;
     --identity)   IDENTITY="${2:?--identity needs a value}"; shift 2 ;;
     --install)    shift ;;  # compatibility no-op: install-or-update is always run
+    --update)     DO_UPDATE=1; shift ;;
     --no-harden)  DO_HARDEN=0; shift ;;
-    -h|--help)    sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)    sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Unknown argument: $1 (try --help)" ;;
   esac
 done
+
+# --update is an update, not a provisioning run: skip sshd hardening.
+if [ "$DO_UPDATE" -eq 1 ]; then
+  DO_HARDEN=0
+fi
 
 # The repo installs into the admin user's home (~/server-setup), not /opt.
 INSTALL_DIR="${SERVER_SETUP_DIR:-/home/$ADMIN_USER/server-setup}"
@@ -200,7 +214,11 @@ if [ "$DO_HARDEN" -eq 1 ]; then
   run_ssh "$TARGET" "${SUDO}env ADMIN_USER='${ADMIN_USER}' bash -s -- --yes" \
     < "$REPO_DIR/scripts/harden-sshd.sh"
 else
-  warn "Skipping sshd hardening (--no-harden)."
+  if [ "$DO_UPDATE" -eq 1 ]; then
+    warn "Skipping sshd hardening (update mode)."
+  else
+    warn "Skipping sshd hardening (--no-harden)."
+  fi
 fi
 
 # =============================================================================
@@ -211,6 +229,24 @@ fi
 # and opens the menu. So a plain `bootstrap.sh` updates an already-installed
 # server — it does not run the server's stale local copy. (--install is kept for
 # compatibility; it is now the default.)
+#
+# With --update, setup.sh is run with SETUP_UPDATE=1: it refreshes the files
+# and then runs scripts/update.sh (images + container OS packages, stack
+# restart) instead of showing the menu. No tty is needed, and site files/DBs
+# are not touched.
+if [ "$DO_UPDATE" -eq 1 ]; then
+  say "Refreshing files and updating the server on $HOST (no menu, no site changes)"
+  if run_ssh "$TARGET" 'command -v curl >/dev/null 2>&1'; then
+    run_ssh "$TARGET" "curl -fsSL '$SETUP_URL' -o /tmp/setup.sh && ${SUDO}env SERVER_SETUP_ADMIN_USER='$ADMIN_USER' SETUP_UPDATE=1 bash /tmp/setup.sh"
+  else
+    warn "curl not found on the server — copying install/setup.sh over instead."
+    scp "${SCP_OPTS[@]}" "$REPO_DIR/install/setup.sh" "$TARGET:/tmp/setup.sh"
+    run_ssh "$TARGET" "${SUDO}env SERVER_SETUP_ADMIN_USER='$ADMIN_USER' SETUP_UPDATE=1 bash /tmp/setup.sh"
+  fi
+  say "Update finished on $HOST."
+  exit 0
+fi
+
 say "Running the server-setup installer on $HOST (install or update)"
 if run_ssh "$TARGET" 'command -v curl >/dev/null 2>&1'; then
   run_ssh_t "$TARGET" "curl -fsSL '$SETUP_URL' -o /tmp/setup.sh && ${SUDO}env SERVER_SETUP_ADMIN_USER='$ADMIN_USER' bash /tmp/setup.sh"

@@ -96,6 +96,13 @@ cat <<'BANNER'
 
 BANNER
 
+# --- updating (static text; the banner stays cheap) ------------------------
+printf '  Update the server (images + OS packages, keeps site data)\n'
+printf '  -------------------------------------------------------\n'
+printf '    menu option : sudo bash %s/install/setup.sh   then choose 5\n' "$REPO_DIR"
+printf '    or directly : sudo bash %s/scripts/update.sh\n' "$REPO_DIR"
+printf '    from laptop : ./bootstrap.sh --host <ip> --update\n'
+
 # --- adding a site (static text; the banner stays cheap) -------------------
 printf '  Add a new site\n  --------------\n'
 printf '    menu  : sudo bash %s/install/setup.sh   then choose 2\n' "$REPO_DIR"
