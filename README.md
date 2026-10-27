@@ -600,6 +600,16 @@ rather than gated: `wp-cron.php` (cron runs from `server-wpcron.timer`) and any
   `AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET`) are generated into
   `.env` by `deploy.sh` on first run.
 
+**Operational note:** nginx reaches Authelia by container name, resolved at
+request time and cached for a few seconds (`resolver … valid=10s`). A
+`podman restart authelia` gives the container a new address, so **restart nginx
+afterwards** — otherwise every gated vhost returns 500 (the auth subrequest
+fails with 502, which nginx reports as 500) until the cache expires:
+
+```bash
+sudo podman restart authelia && sudo podman restart nginx
+```
+
 ### Standalone setup (no full deploy)
 
 `deploy.sh` is destructive (it re-imports every site + DB from the snapshot), so

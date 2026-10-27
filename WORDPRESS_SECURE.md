@@ -306,14 +306,20 @@ Insert a resource rule **after** the existing `admin.ryan` bypass rule and
     - domain:
         - '*.hellyer.kiwi'
       resources:
-        - '^/wp-admin(/.*)?$'
-        - '^/wp-login\.php$'
-        - '^/wp-signup\.php$'
-        - '^/wp-activate\.php$'
-        - '^/xmlrpc\.php$'
-        - '^/wp-json(/.*)?$'
+        - '^/wp-admin([/?].*)?$'
+        - '^/wp-login\.php([/?].*)?$'
+        - '^/wp-signup\.php([/?].*)?$'
+        - '^/wp-activate\.php([/?].*)?$'
+        - '^/xmlrpc\.php([/?].*)?$'
+        - '^/wp-json([/?].*)?$'
       policy: 'two_factor'
 ```
+
+The `([/?].*)?$` suffix is load-bearing: `resources` matches the **path and
+query**, so a bare `$` fails as soon as WordPress appends
+`?redirect_to=…&reauth=1` to `/wp-login.php`, the request falls through to
+`default_policy: deny`, and nginx returns 403 instead of the login form. Same
+trap for `wp-signup.php`, `wp-activate.php` and `xmlrpc.php`.
 
 Then no change to the existing full-domain rule: `wordpress.hellyer.kiwi` is
 deliberately **not** added to it (§4.1).

@@ -120,15 +120,21 @@ access_control:
     # wp-cron.php is deliberately absent: an Authelia policy would *permit*
     # cron over HTTP to any authenticated session. nginx denies it outright
     # instead (§4.6).
+    #
+    # `resources` matches the PATH AND QUERY, so every pattern must tolerate a
+    # query string: use the documented `([/?].*)?$` suffix rather than a bare
+    # `$`. With a bare `$`, `/wp-login.php?redirect_to=...&reauth=1` (what
+    # WordPress sends after a failed admin visit) stops matching, falls through
+    # to default_policy: deny, and nginx returns 403.
     - domain:
         - '*.hellyer.kiwi'
       resources:
-        - '^/wp-admin(/.*)?$'
-        - '^/wp-login\.php$'
-        - '^/wp-signup\.php$'
-        - '^/wp-activate\.php$'
-        - '^/xmlrpc\.php$'
-        - '^/wp-json(/.*)?$'
+        - '^/wp-admin([/?].*)?$'
+        - '^/wp-login\.php([/?].*)?$'
+        - '^/wp-signup\.php([/?].*)?$'
+        - '^/wp-activate\.php([/?].*)?$'
+        - '^/xmlrpc\.php([/?].*)?$'
+        - '^/wp-json([/?].*)?$'
       policy: 'two_factor'
 
     - domain:
