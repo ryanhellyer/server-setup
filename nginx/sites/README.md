@@ -72,6 +72,24 @@ Each such host therefore gets its own small `conf.d/` block (e.g.
 `php-auth`) to scaffold one. Path-level gates (above) work fine in a shared
 block — they simply apply to every host in it.
 
+**Do not list `401` in a protected block's `error_page` list.** nginx uses the
+first `error_page` entry that matches, so
+
+```nginx
+error_page 400 401 402 403 ... /error.html;   # wrong for a gated vhost
+```
+
+sends the "not authenticated" signal to `/error.html` — which is itself behind
+the gate — and the visitor gets a bare 401 instead of the portal. Omit 401
+there and let `authelia-authrequest.conf` handle it:
+
+```nginx
+error_page 400 402 403 ... /error.html;
+```
+
+`/error.html` is exempt from this only in unprotected blocks, where it is
+reachable anyway.
+
 Then allow the host in `authelia/configuration.yml` (`access_control.rules`)
 and restart Authelia. The user database/config/DB live under
 `~/www/auth.hellyer.kiwi` (snapshot-backed; a data dir, not a site root); see

@@ -465,9 +465,8 @@ for h in de.hellyer.kiwi ice.hellyer.kiwi tweets.hellyer.kiwi; do
   done
 done
 
-# Whole-vhost protection is unchanged. NOTE: these blocks currently answer a
-# bare 401 rather than redirecting — pre-existing, see §10 of the plan doc.
-curl -s -o /dev/null -w '%{http_code}\n' https://admin.ryan.hellyer.kiwi/
+# Whole-vhost protection (expect 302 -> portal; see §10):
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://admin.ryan.hellyer.kiwi/
 ```
 
 Hard-denied paths (expect **403**, *not* a redirect — a redirect means the deny
@@ -561,9 +560,10 @@ Resolved:
 
 ---
 
-## 10. Found during implementation: whole-vhost 401 instead of a redirect
+## 10. Fixed: whole-vhost 401 instead of a redirect
 
-Pre-existing, not caused by this plan, and **not changed** by it.
+Pre-existing, not caused by this plan. Found in a sandbox run and **fixed** while
+implementing it.
 
 **Symptom.** An unauthenticated request to a whole-vhost protected host
 (`invoices`, `admin.ryan`, `health`, `dad`, `storage`, `phone`) returns a bare
@@ -584,21 +584,28 @@ redirect is itself inside the gate, so fetching `/error.html` gets a 401 too,
 and with `recursive_error_pages` off nginx gives up and returns the built-in
 401. Verified in a sandbox nginx run with a stub authz endpoint.
 
-**Why it was left alone.** Two fixes, each with a trade-off, and neither is
-needed for the path gate:
+**Fix applied (option A).** `401` was removed from that `error_page` list in
+the five gated blocks — `protected-multisite.conf`, `health-site.conf`,
+`dad-site.conf`, `storage-site.conf`, `phone.hellyer.kiwi.conf` — with a comment
+in each so it is not added back. The snippet's `error_page 401 =302` is then the
+only 401 handler and the portal redirect runs.
 
-* **A — drop `401` from that `error_page` list** in the six blocks. One token
-  per file; the snippet's redirect then wins. Trade-off: an *application* 401
-  (e.g. `/wp-json/` with a bad application password) also becomes a portal
-  redirect, which can bounce an already-authenticated user in a loop.
-* **B — ungate the error page.** Give `/error.html` its own location whose
-  `auth_request` points at an always-`204` internal endpoint, so the error page
-  is always fetchable. Precise, but more config in every protected block and it
-  assumes `error.html` exists in each root.
+Blocks that are **not** whole-vhost gated keep `401` in their list
+(`php-site.conf`, `static-site.conf`, `static-spa.conf`,
+`wordpress-multisite.conf`): they have no portal redirect to preserve, and their
+`/error.html` is not behind a gate, so the error page is served normally.
 
-Recommended when picked up: **A** for the WordPress blocks (their 401s are
-REST-only and `admin.ryan`'s REST consumer is already bypassed), **B** for the
-Laravel/API hosts where app 401s are meaningful.
+Trade-off accepted: an *application* 401 on those five hosts now becomes a
+portal redirect rather than a 401 page. The only consumer affected is
+`admin.ryan`'s WP REST, whose one machine endpoint is already `bypass`ed; an
+application password pointed at a gated REST path would bounce. If that ever
+matters, the precise fix is option B — give `/error.html` its own location
+whose `auth_request` points at an always-`204` internal endpoint.
+
+Side effect: `/wp-cron.php` on those five hosts returns a bare **401** to an
+anonymous client (the 403 is diverted to the gated error page, and recursion is
+off). Authenticated users still get the 403 + error page. These vhosts are
+login-only, so the anonymous case is only ever a scanner.
 
 The path-gated locations are unaffected: they include
 `authelia-authrequest.conf` *inside* the location, so their `error_page 401
