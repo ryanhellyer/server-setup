@@ -7,6 +7,11 @@ in future.
 
 Decisions taken (2026-10-27):
 
+* **Every pressabl host is path-gated, never whole-vhost gated.** The 18 public
+  hosts serving `/var/www/pressabl/public_html` keep their content public; only
+  `wp-admin/`, `wp-login.php`, `wp-json`, `xmlrpc.php` and multisite
+  signup/activate require Authelia. Whole-vhost SSO stays limited to the two
+  hosts already in `protected-multisite.conf`. See §4.1.
 * **`wp-json` is gated everywhere.** The only machine consumer is
   `admin.ryan.hellyer.kiwi`'s published-posts endpoint, already covered by a
   first-match `bypass` rule.
@@ -19,11 +24,14 @@ Decisions taken (2026-10-27):
 
 ## 1. Goal
 
-1. **Full-vhost SSO**: extend the Authelia gate that currently protects
-   `admin.ryan.hellyer.kiwi` to **`wordpress.hellyer.kiwi`** as well.
-2. **Path-level SSO**: gate the internal WordPress endpoints that the public
-   does not need — `wp-admin`, `wp-login.php`, `xmlrpc.php`, `wp-json`
-   (REST), multisite signup/activate — on **every** WordPress host.
+1. **Full-vhost SSO stays as it is.** `invoices.hellyer.kiwi` and
+   `admin.ryan.hellyer.kiwi` are already behind the server-level gate, and that
+   is the whole of the whole-vhost set. No pressabl host joins them — the
+   content stays public.
+2. **Path-level SSO covers every pressabl host** (all 20 serving the multisite
+   root — list in §4.1). Gate the internal endpoints the public does not need —
+   `wp-admin`, `wp-login.php`, `xmlrpc.php`, `wp-json` (REST), multisite
+   signup/activate — on each of them.
 3. **Hard-deny** the paths that are pure attack surface and never needed over
    HTTP: `wp-cron.php`, `wp-config.php`, `readme.html`, uploaded PHP, debug
    logs. These are `return 403`, not Authelia — see §4.6.
@@ -40,8 +48,8 @@ This is a documentation-only plan. No config has been changed yet.
   `invoices.hellyer.kiwi` and `admin.ryan.hellyer.kiwi`, with the same
   `pressabl` root and WordPress locations as the main block.
 * `nginx/conf.d/wordpress-multisite.conf` is the public multisite block. It
-  serves the rest of the hostnames, including `wordpress.hellyer.kiwi`
-  (line 17), and has **no** Authelia gate.
+  serves the other 18 pressabl hostnames (§4.1) and has **no** Authelia gate.
+  `wordpress.hellyer.kiwi` is one of them and stays public.
 * `authelia/configuration.yml` `access_control.rules`:
   * a single `bypass` rule for
     `admin.ryan.hellyer.kiwi` → `^/wp-json/wordpress-api/v1/posts/?$`
@@ -69,7 +77,8 @@ This is a documentation-only plan. No config has been changed yet.
    `auth_request` *is* fine in a shared block, but it fires for **every host in
    that block** (nginx cannot decide per `$host` whether to issue the
    subrequest). This matters for the non-`hellyer.kiwi` multisite domains (see
-   §4.4).
+   §4.4). For this plan it is a feature rather than a limitation: all 20
+   pressabl hosts want the same gate (§4.1).
 2. **Authelia `default_policy: deny`.** Once nginx starts asking Authelia about
    a host/path, a matching rule must grant access or *even authenticated users*
    are denied. New resource rules are mandatory, not optional. A missing rule
@@ -107,21 +116,63 @@ This is a documentation-only plan. No config has been changed yet.
 
 ## 4. Proposed changes
 
-### 4.1 Full-vhost protection for `wordpress.hellyer.kiwi`
+### 4.1 Coverage: every host on the pressabl root
 
-Move the host from the public block to the protected block (a host cannot be in
-two `server_name`s, and only the protected block can carry the server-level
-gate).
+The multisite install is one root (`/var/www/pressabl/public_html`) served by
+**20** hostnames across two server blocks. The path gate is added to the 18
+public ones; the two already inside `protected-multisite.conf` are covered for
+every path anyway, so neither block's `server_name` list changes.
 
-* `nginx/conf.d/wordpress-multisite.conf`: remove `wordpress.hellyer.kiwi`
-  from the `server_name` list (line 17).
-* `nginx/conf.d/protected-multisite.conf`: add `wordpress.hellyer.kiwi` to
-  `server_name` (line 16) and update the file header comment.
-* `authelia/configuration.yml`: add `'wordpress.hellyer.kiwi'` to the
-  `two_factor` domain list (currently lines 110–118).
+`wordpress-multisite.conf` — 18 hosts, currently ungated:
 
-No log/root/TLS changes are needed — both blocks already use the same
-`pressabl` root, logs and certificate.
+```
+de.hellyer.kiwi                     ice.hellyer.kiwi
+undiecar.hellyer.kiwi               instagram.hellyer.kiwi
+undiecar.com                        nb.hellyer.kiwi
+berlin-advice.hellyer.kiwi          offline-demo.hellyer.kiwi
+book.hellyer.kiwi                   slapshot.hellyer.kiwi
+external-posts.hellyer.kiwi         tweets.hellyer.kiwi
+facebook.hellyer.kiwi               wordpress.hellyer.kiwi
+forum.hellyer.kiwi                  dunedinicehockey.hellyer.kiwi
+psychedelicsocietyberlin.org        carly.hellyer.kiwi
+```
+
+`protected-multisite.conf` — 2 hosts, already whole-vhost gated:
+
+```
+invoices.hellyer.kiwi                admin.ryan.hellyer.kiwi
+```
+
+Why path-level rather than moving hosts into the protected block:
+
+* **The content is public.** These are readable sites; a server-level gate
+  would make all 18 login-only. Path-level gives the same protection to the
+  administrative surface without closing the front door.
+* **`auth_request` is not variable-driven** (§3.1), so one include in
+  `wordpress-multisite.conf` gates the listed paths for every host in that
+  block — exactly the desired coverage, with no per-host duplication and no
+  block splitting.
+* Moving 18 hosts to a second block to get a server-level gate would also
+  strand `undiecar.com` and `psychedelicsocietyberlin.org`, which sit outside
+  the `hellyer.kiwi` session cookie domain (§3.4, §4.4).
+
+Consequences to keep in mind:
+
+* `wordpress.hellyer.kiwi` stays in the public block. Its front page and posts
+  remain anonymous; only its `wp-*` paths are gated. It is **not** added to
+  `authelia/configuration.yml`'s full-domain `two_factor` list — the
+  `*.hellyer.kiwi` resource rule in §4.3 is what covers it.
+* `undiecar.com` and `psychedelicsocietyberlin.org` are inside the gated
+  locations but have no matching Authelia rule, so with `default_policy: deny`
+  their `wp-*` paths would return **403**. Both are not DNS-pointed here
+  (§4.4), so this is theoretical — but it is now a deny, not a redirect loop.
+* `secure.hellyer.kiwi` reuses this root as an `@fallback` only. It is its own
+  server block, already whole-vhost gated, and needs no change.
+* No log/root/TLS changes: every block here already shares the `pressabl`
+  certificate.
+
+The only edit to `protected-multisite.conf` in this plan is the `wp-cron.php`
+deny (§4.6).
 
 ### 4.2 Path-level protection for internal WordPress endpoints
 
@@ -264,14 +315,14 @@ Insert a resource rule **after** the existing `admin.ryan` bypass rule and
       policy: 'two_factor'
 ```
 
-Then add `'wordpress.hellyer.kiwi'` to the existing full-domain `two_factor`
-rule for §4.1.
+Then no change to the existing full-domain rule: `wordpress.hellyer.kiwi` is
+deliberately **not** added to it (§4.1).
 
 Ordering of the resulting rules:
 
 1. `admin.ryan.hellyer.kiwi` → `^/wp-json/wordpress-api/v1/posts/?$` = **bypass**
 2. `*.hellyer.kiwi` → internal WP resources = **two_factor**  ← new
-3. `chat/storage/invoices/admin.ryan/health/secure/dad/phone/wordpress` = **two_factor**
+3. `chat/storage/invoices/admin.ryan/health/secure/dad/phone` = **two_factor**
 
 Rule 1 still wins for the Laravel fetch, because it is first-match.
 
@@ -362,21 +413,21 @@ direct hits.
 
 ## 5. Files to change (checklist)
 
-- [ ] `authelia/configuration.yml` — add the internal-WP resource rule; add
-      `wordpress.hellyer.kiwi` to the full-domain `two_factor` list. No cron rule.
+- [ ] `authelia/configuration.yml` — add the internal-WP resource rule. No cron
+      rule, and no full-domain entry for `wordpress.hellyer.kiwi` (§4.1).
 - [ ] `nginx/snippets/wordpress-php-fastcgi.conf` — **new** helper snippet.
 - [ ] `nginx/snippets/wordpress-protected-paths.conf` — **new** gated locations.
 - [ ] `nginx/conf.d/wordpress-multisite.conf` — add
       `authelia-authz-location.conf` include + `wordpress-protected-paths.conf`
-      include; add `wp-cron.php` 403 + `?rest_route=` 403; remove
-      `wordpress.hellyer.kiwi`; update header comment.
-- [ ] `nginx/conf.d/protected-multisite.conf` — add `wordpress.hellyer.kiwi`;
-      add the `wp-cron.php` 403; update header comment.
+      include; add `wp-cron.php` 403 + `?rest_route=` 403; update header
+      comment. (`server_name` is unchanged — all 18 hosts stay here.)
+- [ ] `nginx/conf.d/protected-multisite.conf` — add the `wp-cron.php` 403;
+      update header comment. (`server_name` unchanged.)
 - [ ] `nginx/nginx.conf` — extend `$no_cache_uri` (§4.5).
 - [ ] `nginx/sites/README.md` — update the block table (protected-multisite
       hosts) and note the new snippet.
-- [ ] `README.md` — add `wordpress.hellyer.kiwi` to the Authelia host list
-      (lines ~494–498) and mention the path gate.
+- [ ] `README.md` — note that the path gate covers every pressabl host, and
+      that no new host is whole-vhost protected.
 - [x] `wp-config.php` (host, outside repo) — `DISABLE_WP_CRON` already `true`.
 - [ ] Optional: teach `scripts/new-site.sh` a `wordpress-auth` type so future
       fully-gated WP hosts scaffold into `protected-multisite.conf` instead of
@@ -414,8 +465,8 @@ for h in de.hellyer.kiwi ice.hellyer.kiwi tweets.hellyer.kiwi; do
   done
 done
 
-# Whole-vhost protection:
-curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://wordpress.hellyer.kiwi/
+# Whole-vhost protection is unchanged — check one already-gated host:
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://admin.ryan.hellyer.kiwi/
 ```
 
 Hard-denied paths (expect **403**, *not* a redirect — a redirect means the deny
@@ -432,6 +483,8 @@ Still public (expect **200**, not gated):
 
 ```bash
 curl -sI https://de.hellyer.kiwi/ | head -1
+curl -sI https://wordpress.hellyer.kiwi/ | head -1    # now path-gated only
+curl -sI https://tweets.hellyer.kiwi/ | head -1
 curl -sI https://ryan.hellyer.kiwi/ | head -1
 ```
 
@@ -493,6 +546,9 @@ migration or TLS work is involved.
 
 Resolved:
 
+* ~~Full-vhost SSO for `wordpress.hellyer.kiwi`?~~ **No.** Every pressabl host
+  keeps public content and gets the path gate only; whole-vhost stays with
+  `invoices` and `admin.ryan`. See §4.1.
 * ~~`admin-ajax.php`: gate or exempt?~~ **Gate, no exemption** — no site uses
   it for logged-out requests.
 * ~~`wp-json` consumers?~~ **Gate everywhere**; `admin.ryan`'s published-posts
