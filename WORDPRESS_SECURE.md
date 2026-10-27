@@ -5,6 +5,18 @@ Scope: the Pressabl WordPress Multisite (one shared install at
 `/var/www/pressabl/public_html`, ~20 hostnames) plus any single-site WP vhosts
 in future.
 
+Decisions taken (2026-10-27):
+
+* **`wp-json` is gated everywhere.** The only machine consumer is
+  `admin.ryan.hellyer.kiwi`'s published-posts endpoint, already covered by a
+  first-match `bypass` rule.
+* **`admin-ajax.php` is gated with no exemption.** None of the sites use it for
+  logged-out requests.
+* **`wp-cron.php` is hard-denied, not gated.** Cron runs from
+  `scripts/wp-cron.sh`; `DISABLE_WP_CRON` is already `true` in
+  `wp-config.php`, so there is no loopback to break.
+* **Still open:** policy level (`two_factor` vs `one_factor`) — see §9.
+
 ## 1. Goal
 
 1. **Full-vhost SSO**: extend the Authelia gate that currently protects
@@ -12,9 +24,9 @@ in future.
 2. **Path-level SSO**: gate the internal WordPress endpoints that the public
    does not need — `wp-admin`, `wp-login.php`, `xmlrpc.php`, `wp-json`
    (REST), multisite signup/activate — on **every** WordPress host.
-3. Optionally harden a few non-SSO WordPress paths (`wp-cron.php`,
-   `wp-config.php`, `readme.html`, uploaded PHP, debug logs) that are pure
-   attack surface / information disclosure.
+3. **Hard-deny** the paths that are pure attack surface and never needed over
+   HTTP: `wp-cron.php`, `wp-config.php`, `readme.html`, uploaded PHP, debug
+   logs. These are `return 403`, not Authelia — see §4.6.
 
 This is a documentation-only plan. No config has been changed yet.
 
@@ -35,7 +47,7 @@ This is a documentation-only plan. No config has been changed yet.
     `admin.ryan.hellyer.kiwi` → `^/wp-json/wordpress-api/v1/posts/?$`
     (so `ryan.hellyer.kiwi`'s Laravel app can fetch it server-side), then
   * a `two_factor` rule listing `chat`, `storage`, `invoices`,
-    `admin.ryan`, `health`, `secure`, `dad`.
+    `admin.ryan`, `health`, `secure`, `dad`, `phone`.
   * `default_policy: deny`, rules are **first-match**.
 * The reusable snippets already support per-path protection: the sites README
   documents "protect one path/page → include the authz snippet once at server
@@ -44,6 +56,9 @@ This is a documentation-only plan. No config has been changed yet.
   `/xmlrpc.php` and `/wp-*.php` (`$no_cache_uri`, line 84).
 * WordPress cron is not needed over HTTP: `scripts/wp-cron.sh` runs due events
   via WP-CLI from a systemd timer (`server-wpcron.timer`, every 10 min).
+  `DISABLE_WP_CRON` is **already defined `true`** in `wp-config.php`, so page
+  loads do not spawn a loopback request. Direct HTTP hits to `wp-cron.php`
+  still execute due events — that is the case §4.6 closes.
 
 ---
 
@@ -57,7 +72,8 @@ This is a documentation-only plan. No config has been changed yet.
    §4.4).
 2. **Authelia `default_policy: deny`.** Once nginx starts asking Authelia about
    a host/path, a matching rule must grant access or *even authenticated users*
-   are denied. New resource rules are mandatory, not optional.
+   are denied. New resource rules are mandatory, not optional. A missing rule
+   produces a bare 403, not a login redirect.
 3. **First-match ordering.** The existing `admin.ryan` `bypass` rule must stay
    first, before any broad `*.hellyer.kiwi` path rule that would otherwise
    capture its `/wp-json/…/posts` endpoint.
@@ -65,20 +81,27 @@ This is a documentation-only plan. No config has been changed yet.
    `hellyer.kiwi`, so SSO only works for hosts under that domain; a host on
    another registrable domain would need its own portal (Authelia multi-domain
    cookies require `authelia_url` to be under the cookie's domain) or a 401
-   would bounce to `auth.hellyer.kiwi` and loop. This does not affect the
-   current plan: the only non-`hellyer.kiwi` hosts in the WordPress block
-   (`undiecar.com`, `psychedelicsocietyberlin.org`) are not DNS-pointed here.
-   See §4.4.
+   would bounce to `auth.hellyer.kiwi` and loop. Authelia also rejects rule
+   domains outside the session domain. This does not affect the current plan:
+   the only non-`hellyer.kiwi` hosts in the WordPress block (`undiecar.com`,
+   `psychedelicsocietyberlin.org`) are not DNS-pointed here. See §4.4.
 5. **nginx regex-location ordering.** The generic `location ~ \.php$` and the
    `static-assets.conf` regexes will beat a plain `/wp-admin/` prefix location
    unless an admin-specific PHP regex is declared **before** them. The admin
    regex must be placed before both.
 6. **`?rest_route=` bypass.** WordPress also exposes the REST API as
    `/?rest_route=/wp/v2/...`. That is a query string, not a path, so it does
-   not match a `/wp-json/` location and would reach PHP ungated. See §4.6.
-7. **Loopback cron.** Gating `wp-cron.php` with Authelia would break
-   page-load cron (the loopback request has no session). Use a hard deny +
-   the existing systemd timer, or leave it.
+   not match a `/wp-json/` location and would reach PHP ungated. Since nothing
+   on the public hosts calls the REST API, this is now closed rather than
+   accepted. See §4.6.
+7. **Gating cron is the wrong verb.** `wp-cron.php` should never run over
+   HTTP, so the correct expression of that is `return 403`, not an Authelia
+   policy. A `two_factor` rule would *permit* cron over HTTP to any
+   authenticated session — the opposite of the intent — and would route
+   scanner traffic (this path is heavily probed) into Authelia and Redis, the
+   component whose failure locks out every protected host. `DISABLE_WP_CRON`
+   is already set, so there is no loopback to preserve; the deny is purely
+   about direct hits.
 
 ---
 
@@ -135,6 +158,10 @@ Then the protected-paths snippet:
 # auth_request is NOT variable-driven: these locations gate the listed paths
 # for EVERY host in the block. See WORDPRESS_SECURE.md §4.4 for the
 # non-hellyer.kiwi hosts.
+#
+# Deliberately NOT in here: wp-cron.php (hard-deny, §4.6 — never gate cron) and
+# admin-ajax.php (gated by the admin PHP regex below; no site uses it for
+# logged-out requests, so no exemption).
 # =============================================================================
 
 # ---- Multisite registration / activation / login (PHP) ----
@@ -190,21 +217,29 @@ change.
 Notes / caveats to keep in the snippet comments:
 
 * **`admin-ajax.php`** (`/wp-admin/admin-ajax.php`) is gated by the admin PHP
-  regex. Front-end themes/plugins occasionally use it for logged-out AJAX
-  (contact forms, cart fragments). If testing shows breakage, add an *ungated*
-  exemption **before** the admin PHP regex:
-  ```nginx
-  location = /wp-admin/admin-ajax.php {
-      include /etc/nginx/snippets/wordpress-php-fastcgi.conf;
-  }
-  ```
-  This is a deliberate trade-off (admin-ajax is also a common spam target).
-* **`/wp-json/` consumers** must be checked before enabling the gate. The only
-  known machine consumer today is `ryan.hellyer.kiwi`'s Laravel app against
-  `admin.ryan.hellyer.kiwi`, covered by the existing `bypass` rule. Verify no
-  other site's front-end (or the planned Laravel front-end) fetches these
-  domains' REST API.
+  regex, with **no exemption**. No site on the multisite uses it for
+  logged-out AJAX, so this is the tighter option and the agreed one. It is the
+  classic silent breakage when a plugin is added later (the form just
+  redirects to the auth portal), so re-check after deploy with the access-log
+  query in §7.
+* **`/wp-json/` consumers**: the only known machine consumer is
+  `ryan.hellyer.kiwi`'s Laravel app against `admin.ryan.hellyer.kiwi`, covered
+  by the existing `bypass` rule. Nothing on the public hosts calls the REST
+  API. Expect two consequences, neither a bug:
+  * **Site Health reports "The REST API encountered an error"** — its
+    availability test is a loopback from PHP-FPM with no Authelia cookie. If
+    the false alarm ever matters, the fix is a `networks:` bypass for the
+    container network, not a path exemption.
+  * **Application Passwords / REST basic auth stop working** on the public
+    hosts. Any future integration needs an Authelia session or a `bypass`
+    entry.
 * The gate covers `/wp-admin/network/` (network admin) automatically.
+* **Static assets under `/wp-admin/`** are gated by the prefix location, which
+  costs one auth subrequest per CSS/JS file (~50 per admin page, uncached).
+  Optional optimisation: leave the prefix ungated and keep auth on the PHP
+  regex + `index.php` only — those files are public core assets and carry no
+  data. Do **not** use `^~` on that prefix; it would outrank the admin PHP
+  regex and serve `.php` as static text.
 
 ### 4.3 Authelia `access_control` rules
 
@@ -216,6 +251,7 @@ Insert a resource rule **after** the existing `admin.ryan` bypass rule and
     # only issues the subrequest for these paths
     # (nginx/snippets/wordpress-protected-paths.conf). The wildcard covers the
     # hellyer.kiwi multisite hosts; auth only triggers where nginx asks.
+    # Policy shown as two_factor; one_factor is the open alternative (§9).
     - domain:
         - '*.hellyer.kiwi'
       resources:
@@ -235,15 +271,25 @@ Ordering of the resulting rules:
 
 1. `admin.ryan.hellyer.kiwi` → `^/wp-json/wordpress-api/v1/posts/?$` = **bypass**
 2. `*.hellyer.kiwi` → internal WP resources = **two_factor**  ← new
-3. `chat/storage/invoices/admin.ryan/health/secure/dad/wordpress` = **two_factor**
+3. `chat/storage/invoices/admin.ryan/health/secure/dad/phone/wordpress` = **two_factor**
 
 Rule 1 still wins for the Laravel fetch, because it is first-match.
+
+> **No `wp-cron.php` resource may be added here.** A matching rule would
+> permit cron over HTTP to any authenticated session. The endpoint is denied
+> in nginx instead (§4.6).
+
+> `resources` is case-sensitive in Authelia (no implicit `(?i)`), while
+> `domain` matching is case-insensitive. WordPress paths are lowercase, so no
+> action is needed — just do not assume `/WP-ADMIN/` is covered.
 
 > Prefer an explicit domain list over `'*.hellyer.kiwi'`? Both work. The
 > wildcard is lower-maintenance (new WP subsites inherit protection); it only
 > affects hosts nginx actually asks about. Enumerate the hosts from
 > `nginx/conf.d/wordpress-multisite.conf` + `protected-multisite.conf` if you
-> want the rule to be auditable on its own.
+> want the rule to be auditable on its own. Note `'*.hellyer.kiwi'` matches
+> subdomains only, not the apex — not an issue here, since no WP host is the
+> apex.
 
 ### 4.4 Non-`hellyer.kiwi` multisite hosts — out of scope (resolved)
 
@@ -255,8 +301,9 @@ wildcard rule therefore covers every reachable WordPress host.
 If either domain is ever pointed at this server, revisit: the Authelia session
 cookie is scoped to `hellyer.kiwi`, so those hosts cannot use SSO without a
 portal under their own registrable domain (Authelia multi-domain cookies), and
-would otherwise loop. The clean fallback then is an Authelia `deny` rule for
-their internal paths (returns 403) or a sibling unprotected block.
+would otherwise loop. The clean fallback then is a sibling unprotected block,
+or nginx-level denies for the sensitive paths rather than an Authelia rule
+(Authelia refuses rule domains outside the session domain).
 
 ### 4.5 Cache / nginx map touch-ups
 
@@ -272,44 +319,65 @@ their internal paths (returns 403) or a sibling unprotected block.
   (`/wp-.*.php` already catches `wp-login`/`wp-signup`/`wp-activate`; the exact
   additions are belt-and-braces and make the intent explicit.)
 * No change needed to the `$blogid` map or WordPress rewrite rules.
+* `auth_request` runs in the access phase, before the content/cache phase, so
+  a gated path can never be served from cache without authorisation. The
+  entries above are about correctness of cached *variables*, not leakage.
 
-### 4.6 Optional non-SSO hardening
+### 4.6 Non-SSO hardening — deny, don't gate
 
-These do not need Authelia and close obvious holes:
+These do not go through Authelia at all. They are `return 403` / `return 404`
+in nginx, placed **before** `static-assets.conf` in `wordpress-multisite.conf`
+and at the top of `protected-multisite.conf`.
 
 | Path / pattern | Action | Rationale |
 |---|---|---|
-| `/wp-cron.php` | `return 403` | loopback cron; covered by `wp-cron.sh` timer. Never SSO it. |
-| `/wp-config.php` | `return 403` | direct access is never legitimate. |
-| `/wp-config-sample.php`, `/readme.html`, `/license.txt` | `return 404` | version / install info disclosure. |
-| `~* /wp-content/uploads/.*\.php$` | `return 403` | uploaded PHP must never execute. |
-| `~* /wp-content/(debug\.log|\.maintenance)$` | `return 403` | debug output / maintenance signal. |
-| `?rest_route=` (query) | optionally `return 403` | closes the `/wp-json/` gate bypass; test admin/plugins first. |
-| `?author=\d` | optionally `return 403` | user enumeration. |
+| `/wp-cron.php` | `return 403` | **Agreed.** Cron runs from `wp-cron.sh`; `DISABLE_WP_CRON` is already set so nothing loops back. Never SSO it — a rule would *allow* cron over HTTP. |
+| `?rest_route=` (query) | `return 403` | **Agreed** (public block only). Closes the `/wp-json/` gate bypass; nothing on these hosts uses REST. Do not add to `protected-multisite.conf` — `admin.ryan` needs REST. |
+| `/wp-config.php` | `return 403` | Direct access is never legitimate. |
+| `/wp-config-sample.php`, `/readme.html`, `/license.txt` | `return 404` | Version / install info disclosure. |
+| `~* /wp-content/uploads/.*\.php$` | `return 403` | Uploaded PHP must never execute. |
+| `~* /wp-content/(debug\.log|\.maintenance)$` | `return 403` | Debug output / maintenance signal. |
+| `?author=\d` | optionally `return 403` | User enumeration. |
 
-Known residual bypass: `?rest_route=/wp/v2/...` reaches PHP through
-`location /` and bypasses the `/wp-json/` gate. Blocking the query is the only
-clean nginx-side fix; otherwise accept it (public REST data is low-risk) or add
-an upstream rule.
+Sketch for the two agreed rows:
+
+```nginx
+# Never needed over HTTP: cron is driven by server-wpcron.timer (wp-cron.sh).
+location = /wp-cron.php { return 403; }
+
+# WordPress exposes REST at /?rest_route=/wp/v2/... too, which would bypass
+# the ^~ /wp-json gate. Nothing on the public hosts calls REST.
+if ($args ~* "rest_route") { return 403; }
+```
+
+`return` runs in the rewrite phase, ahead of `auth_request` (access phase), so
+the exact-match location costs no subrequest even in the whole-vhost-protected
+block.
+
+`DISABLE_WP_CRON` is already `true` in `wp-config.php` (host path, outside this
+repo), so no loopback request is made for page loads and the deny only affects
+direct hits.
 
 ---
 
 ## 5. Files to change (checklist)
 
 - [ ] `authelia/configuration.yml` — add the internal-WP resource rule; add
-      `wordpress.hellyer.kiwi` to the full-domain `two_factor` list.
+      `wordpress.hellyer.kiwi` to the full-domain `two_factor` list. No cron rule.
 - [ ] `nginx/snippets/wordpress-php-fastcgi.conf` — **new** helper snippet.
 - [ ] `nginx/snippets/wordpress-protected-paths.conf` — **new** gated locations.
 - [ ] `nginx/conf.d/wordpress-multisite.conf` — add
       `authelia-authz-location.conf` include + `wordpress-protected-paths.conf`
-      include; remove `wordpress.hellyer.kiwi`; update header comment.
+      include; add `wp-cron.php` 403 + `?rest_route=` 403; remove
+      `wordpress.hellyer.kiwi`; update header comment.
 - [ ] `nginx/conf.d/protected-multisite.conf` — add `wordpress.hellyer.kiwi`;
-      update header comment.
+      add the `wp-cron.php` 403; update header comment.
 - [ ] `nginx/nginx.conf` — extend `$no_cache_uri` (§4.5).
 - [ ] `nginx/sites/README.md` — update the block table (protected-multisite
       hosts) and note the new snippet.
 - [ ] `README.md` — add `wordpress.hellyer.kiwi` to the Authelia host list
       (lines ~494–498) and mention the path gate.
+- [x] `wp-config.php` (host, outside repo) — `DISABLE_WP_CRON` already `true`.
 - [ ] Optional: teach `scripts/new-site.sh` a `wordpress-auth` type so future
       fully-gated WP hosts scaffold into `protected-multisite.conf` instead of
       the public block.
@@ -340,7 +408,7 @@ Unauthenticated (expect **302 → `https://auth.hellyer.kiwi/?rd=…`**):
 
 ```bash
 for h in de.hellyer.kiwi ice.hellyer.kiwi tweets.hellyer.kiwi; do
-  for p in /wp-admin/ /wp-login.php /xmlrpc.php /wp-json/; do
+  for p in /wp-admin/ /wp-login.php /xmlrpc.php /wp-json/ /wp-admin/admin-ajax.php; do
     printf '%s%s -> ' "$h" "$p"
     curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "https://$h$p"
   done
@@ -348,6 +416,16 @@ done
 
 # Whole-vhost protection:
 curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://wordpress.hellyer.kiwi/
+```
+
+Hard-denied paths (expect **403**, *not* a redirect — a redirect means the deny
+was not reached):
+
+```bash
+curl -s -o /dev/null -w 'wp-cron     %{http_code}\n' https://de.hellyer.kiwi/wp-cron.php
+curl -s -o /dev/null -w 'rest_route  %{http_code}\n' 'https://de.hellyer.kiwi/?rest_route=/wp/v2/users'
+# only if the optional §4.6 rows are enabled:
+curl -s -o /dev/null -w 'wp-config   %{http_code}\n' https://de.hellyer.kiwi/wp-config.php
 ```
 
 Still public (expect **200**, not gated):
@@ -365,13 +443,25 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 # and confirm ryan.hellyer.kiwi still renders (it calls this server-side)
 ```
 
+`admin-ajax.php` is gated with no exemption — confirm nothing still calls it
+publicly. Any hit is a 302 to the auth portal, which is the tell:
+
+```bash
+sudo grep admin-ajax /home/ryan/logs/pressabl/access.log | grep -c 'auth.hellyer.kiwi'
+# expect 0; a non-zero count names the host and referer that needs looking at
+```
+
 After SSO login, `https://de.hellyer.kiwi/wp-admin/` should proxy through to
 WordPress (which then shows its own login, as expected — the WP session is
 separate from the Authelia session).
 
 Preserved endpoints to spot-check: `/wp-includes/ms-files.php` (multisite file
 serving via `/files/...`) still returns files; `/.well-known/acme-challenge`
-still reachable on port 80; `wp-cron.sh` still reports success.
+still reachable on port 80; `wp-cron.sh` still reports success (it is WP-CLI,
+unaffected by both the nginx deny and `DISABLE_WP_CRON`).
+
+Also expect **Site Health → "The REST API encountered an error"** on the gated
+hosts. That is the uncookied loopback being refused, not a fault.
 
 ---
 
@@ -392,15 +482,22 @@ migration or TLS work is involved.
 
 ## 9. Open questions / decisions
 
-1. **`admin-ajax.php`**: keep it gated (tighter, may break public AJAX forms)
-   or add the ungated exemption?
-2. **`wp-json` consumers**: confirm none of these sites' public front-ends rely
-   on the REST API before gating it.
-3. **`?rest_route=`**: accept the residual bypass or block the query for
-   anonymous users?
-4. **Policy level**: internal paths currently proposed as `two_factor`, matching
-   the other sensitive hosts. `one_factor` would be lighter if TOTP friction is
-   a concern.
-5. **Optional hardening table** (§4.6): enable all, some, or none?
+1. **Policy level** — `two_factor` (matches the other sensitive hosts) or
+   `one_factor` (lighter). Note that gating `wp-login.php` makes the Authelia
+   session the real gate in front of ~20 sites' admin, so `one_factor` leaves a
+   leaked password as the only barrier. Recommendation: `two_factor`, keep
+   `session.inactivity: '1M'` as-is for now, and treat session length as a
+   separate whole-stack decision (it also governs chat/storage/phone).
+2. **Optional hardening (§4.6)** — enable the remaining rows (`wp-config.php`,
+   uploads PHP, debug log, `?author=`), or just the two agreed ones?
 
-_(Non-`hellyer.kiwi` hosts resolved in §4.4 — not DNS-pointed, ignored.)_
+Resolved:
+
+* ~~`admin-ajax.php`: gate or exempt?~~ **Gate, no exemption** — no site uses
+  it for logged-out requests.
+* ~~`wp-json` consumers?~~ **Gate everywhere**; `admin.ryan`'s published-posts
+  endpoint keeps its first-match `bypass`.
+* ~~`?rest_route=`~~ **Closed** on the public block.
+* ~~`wp-cron.php`: gate or deny?~~ **Deny** (`return 403`). `DISABLE_WP_CRON`
+  is already set, so nothing loops back.
+* ~~Non-`hellyer.kiwi` hosts~~ Resolved in §4.4 — not DNS-pointed here.
