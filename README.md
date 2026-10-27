@@ -575,6 +575,16 @@ is listed in `certbot/domains.txt`.
 `phone.hellyer.kiwi`. On `secure`/`dad` it replaces the old HTTP basic auth.
 The gate is reusable for future sites/pages.
 
+Every **pressabl WordPress host** is *also* protected on its `wp-*` paths —
+`wp-admin/`, `wp-login.php`, `wp-signup.php`, `wp-activate.php`, `wp-json/`
+and `xmlrpc.php` — while the site content stays public. That covers all 18
+public multisite subdomains, not just the whole-vhost hosts above
+(`nginx/snippets/wordpress-protected-paths.conf`, included once in
+`nginx/conf.d/wordpress-multisite.conf`). Two paths are **denied outright**
+rather than gated: `wp-cron.php` (cron runs from `server-wpcron.timer`) and any
+`?rest_route=` query, which would otherwise bypass the `/wp-json/` gate. See
+`WORDPRESS_SECURE.md` §4.1–§4.6.
+
 * Container: `compose.yaml` service `authelia`, config in `authelia/`, data
   (SQLite DB + user database + notifier) at `~/www/auth.hellyer.kiwi:/data` so
   the nightly `~/www` snapshot backs it up. Sessions live in the existing

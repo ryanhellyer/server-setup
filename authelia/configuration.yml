@@ -107,6 +107,30 @@ access_control:
         - '^/wp-json/wordpress-api/v1/posts/?$'
       policy: 'bypass'
 
+    # Internal WordPress endpoints — the public does not need these. nginx
+    # only issues the subrequest for the paths listed in
+    # nginx/snippets/wordpress-protected-paths.conf, which is included in the
+    # public multisite block and therefore applies to all 18 of its hosts
+    # (WORDPRESS_SECURE.md §4.1). The wildcard is safe because it only affects
+    # hosts nginx actually asks about, and every reachable WordPress host is a
+    # hellyer.kiwi subdomain — the two non-hellyer.kiwi names in that block do
+    # not resolve here (§4.4). Must stay AFTER the admin.ryan bypass above
+    # (first-match) and BEFORE the full-domain two_factor list below.
+    #
+    # wp-cron.php is deliberately absent: an Authelia policy would *permit*
+    # cron over HTTP to any authenticated session. nginx denies it outright
+    # instead (§4.6).
+    - domain:
+        - '*.hellyer.kiwi'
+      resources:
+        - '^/wp-admin(/.*)?$'
+        - '^/wp-login\.php$'
+        - '^/wp-signup\.php$'
+        - '^/wp-activate\.php$'
+        - '^/xmlrpc\.php$'
+        - '^/wp-json(/.*)?$'
+      policy: 'two_factor'
+
     - domain:
         - 'chat.hellyer.kiwi'
         - 'storage.hellyer.kiwi'

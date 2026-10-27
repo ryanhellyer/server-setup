@@ -7,7 +7,7 @@ block's maps (root, log path, etc.).
 | Block file                     | Hosts it serves                                                   |
 |--------------------------------|-------------------------------------------------------------------|
 | `conf.d/php-site.conf`         | gpx, ryan, kartastrophecup.de, spam-destroyer.com, german, cvs, ai, instantattend.com |
-| `conf.d/wordpress-multisite.conf` | all pressabl WordPress Multisite subdomains                   |
+| `conf.d/wordpress-multisite.conf` | all pressabl WordPress Multisite subdomains (wp-* paths behind Authelia) |
 | `conf.d/secure-site.conf`      | secure.hellyer.kiwi (Authelia)                                    |
 | `conf.d/static-site.conf`      | chocolate, julia, stuff, mum                                      |
 | `conf.d/static-spa.conf`       | comicjet.com, historic-wordpress.hellyer.kiwi                     |
@@ -36,11 +36,41 @@ to the portal (`auth.hellyer.kiwi`). The gate is reusable:
 * To protect **one path/page**, add the authz include once (server level) and
   put `authelia-authrequest.conf` inside that `location` instead.
 
-**Important:** `auth_request` is *not* variable-driven, so a protected host
-cannot live in a shared server block alongside unprotected ones. Each protected
-host therefore gets its own small `conf.d/` block (e.g. `health-site.conf`,
-`protected-multisite.conf`, `dad-site.conf`, `storage-site.conf`). Use
-`scripts/new-site.sh <domain> static-auth` (or `php-auth`) to scaffold one.
+### WordPress internal paths
+
+`wordpress-protected-paths.conf` is the ready-made version of "protect one
+path" for a WordPress install. Include it **once** in a WordPress server block,
+directly after `wordpress-locations.conf` and **before** `static-assets.conf`
+and the generic `location ~ \.php$`:
+
+```nginx
+include /etc/nginx/snippets/authelia-authz-location.conf;    # once per block
+include /etc/nginx/snippets/wordpress-protected-paths.conf;
+```
+
+It gates `/wp-admin/`, `wp-login.php`, `wp-signup.php`, `wp-activate.php`,
+`xmlrpc.php` and `/wp-json/` while leaving the site's content public. Two rules
+that are easy to get wrong:
+
+* The admin PHP regex must be declared before the generic PHP handler and the
+  static-asset regexes, or nginx matches those first and serves the page
+  ungated.
+* Keep the `/wp-admin/` prefix plain — `location ^~ /wp-admin/` would outrank
+  the PHP regex and make nginx serve wp-admin PHP as static text.
+
+Also required: an `access_control` rule in `authelia/configuration.yml` for the
+paths, or `default_policy: deny` returns a bare 403. See
+`WORDPRESS_SECURE.md` §4.2–§4.3.
+
+### Whole-vhost protection
+
+**Important:** `auth_request` is *not* variable-driven, so a **whole-vhost**
+protected host cannot live in a shared server block alongside unprotected ones.
+Each such host therefore gets its own small `conf.d/` block (e.g.
+`health-site.conf`, `protected-multisite.conf`, `dad-site.conf`,
+`storage-site.conf`). Use `scripts/new-site.sh <domain> static-auth` (or
+`php-auth`) to scaffold one. Path-level gates (above) work fine in a shared
+block — they simply apply to every host in it.
 
 Then allow the host in `authelia/configuration.yml` (`access_control.rules`)
 and restart Authelia. The user database/config/DB live under

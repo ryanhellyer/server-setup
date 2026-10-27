@@ -465,8 +465,9 @@ for h in de.hellyer.kiwi ice.hellyer.kiwi tweets.hellyer.kiwi; do
   done
 done
 
-# Whole-vhost protection is unchanged — check one already-gated host:
-curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://admin.ryan.hellyer.kiwi/
+# Whole-vhost protection is unchanged. NOTE: these blocks currently answer a
+# bare 401 rather than redirecting — pre-existing, see §10 of the plan doc.
+curl -s -o /dev/null -w '%{http_code}\n' https://admin.ryan.hellyer.kiwi/
 ```
 
 Hard-denied paths (expect **403**, *not* a redirect — a redirect means the deny
@@ -557,3 +558,50 @@ Resolved:
 * ~~`wp-cron.php`: gate or deny?~~ **Deny** (`return 403`). `DISABLE_WP_CRON`
   is already set, so nothing loops back.
 * ~~Non-`hellyer.kiwi` hosts~~ Resolved in §4.4 — not DNS-pointed here.
+
+---
+
+## 10. Found during implementation: whole-vhost 401 instead of a redirect
+
+Pre-existing, not caused by this plan, and **not changed** by it.
+
+**Symptom.** An unauthenticated request to a whole-vhost protected host
+(`invoices`, `admin.ryan`, `health`, `dad`, `storage`, `phone`) returns a bare
+`401` with nginx's built-in page, not the 302 to the portal that
+`authelia-authrequest.conf` describes and the README promises.
+
+**Cause.** Those blocks declare, at server level and *before* the Authelia
+include:
+
+```nginx
+error_page 400 401 402 403 ... /error.html;
+```
+
+nginx keeps `error_page` entries in declaration order and uses the first one
+whose status list matches, so `401` resolves to `/error.html` and the snippet's
+`error_page 401 =302 https://auth.hellyer.kiwi/?rd=…` never runs. That internal
+redirect is itself inside the gate, so fetching `/error.html` gets a 401 too,
+and with `recursive_error_pages` off nginx gives up and returns the built-in
+401. Verified in a sandbox nginx run with a stub authz endpoint.
+
+**Why it was left alone.** Two fixes, each with a trade-off, and neither is
+needed for the path gate:
+
+* **A — drop `401` from that `error_page` list** in the six blocks. One token
+  per file; the snippet's redirect then wins. Trade-off: an *application* 401
+  (e.g. `/wp-json/` with a bad application password) also becomes a portal
+  redirect, which can bounce an already-authenticated user in a loop.
+* **B — ungate the error page.** Give `/error.html` its own location whose
+  `auth_request` points at an always-`204` internal endpoint, so the error page
+  is always fetchable. Precise, but more config in every protected block and it
+  assumes `error.html` exists in each root.
+
+Recommended when picked up: **A** for the WordPress blocks (their 401s are
+REST-only and `admin.ryan`'s REST consumer is already bypassed), **B** for the
+Laravel/API hosts where app 401s are meaningful.
+
+The path-gated locations are unaffected: they include
+`authelia-authrequest.conf` *inside* the location, so their `error_page 401
+=302` replaces the server-level array rather than competing with it. Confirmed
+by the sandbox run — `/wp-admin/`, `/wp-login.php`, `/wp-json/`, `/xmlrpc.php`
+all 302 to the portal, and `/wp-cron.php` and `?rest_route=` return 403.
