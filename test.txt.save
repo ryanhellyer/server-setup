@@ -1,0 +1,4 @@
+
+sudo install -d -o ryan -g www-data -m 2775 ~/www/translate.hellyer.kiwi/public
+echo '<?php echo "translate works";' | sudo tee ~/www/translate.hellyer.kiwi/public/index.php
+sudo bash scripts/fix-perms.sh ~/www/translate.hellyer.kiwi

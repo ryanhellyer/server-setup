@@ -1,1 +1,19 @@
-sudo podman exec -u www-data -w /var/www/pressabl/public_html php-fpm wp eval 'var_dump(wp_mail("admin@hellyer.kiwi","WP test","ok"));'
+# Run on the server from the checkout that includes the php-site.conf change.
+cd ~/server-setup
+
+# Create the web root (and a per-site log dir for app logs).
+sudo install -d -o ryan -g www-data -m 2775 ~/www/luna.hellyer.test/public
+sudo install -d -g www-data -m 2775 ~/logs/luna.hellyer.test
+
+# Placeholder PHP page.
+echo '<?php echo "luna works";' | sudo tee ~/www/luna.hellyer.test/public/index.php
+
+# Re-apply ownership/permissions.
+sudo bash scripts/fix-perms.sh ~/www/luna.hellyer.test
+
+# Validate the config and reload nginx.
+sudo podman exec nginx nginx -t
+sudo podman exec nginx nginx -s reload
+
+# Smoke test (cert is self-signed in test mode).
+curl -k --resolve luna.hellyer.test:443:127.0.0.1 https://luna.hellyer.test/
