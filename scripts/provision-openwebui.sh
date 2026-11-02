@@ -43,6 +43,16 @@ done
 
 LOCAL_DIR="$WWW_ROOT/$SITE_DIR"
 run() { if [ "$DRY" = 1 ]; then printf '    DRY: %s\n' "$*"; else "$@"; fi; }
+ensure_default_env() { # KEY VALUE — only fill a missing/blank value in .env
+  local key="$1" value="$2" current
+  current="$(get_env .env "$key" 2>/dev/null || true)"
+  if [ -n "$current" ]; then return 0; fi
+  if [ "$DRY" = 1 ]; then
+    printf '    DRY: set %s=%s in .env\n' "$key" "$value"
+  else
+    set_env ".env" "$key" "$value"
+  fi
+}
 
 SNAP="$(newest_snapshot "$SITE_DIR")"
 [ -n "$SNAP" ] || die "No snapshot containing $SITE_DIR under $SNAPSHOT_ROOT."
@@ -65,6 +75,26 @@ else
   else
     warn "Could not find OPENROUTER_API_KEY in $SNAP/$SITE_DIR/install.sh."
   fi
+fi
+# The key may have just been written to .env (set_env does not export it).
+if [ -z "${OPENROUTER_API_KEY:-}" ]; then
+  OPENROUTER_API_KEY="$(get_env .env OPENROUTER_API_KEY 2>/dev/null || true)"
+fi
+
+# ---- image generation defaults (idempotent) --------------------------------
+# Open WebUI configures image generation separately from the chat connection.
+# These point it at the internal `openrouter-images` adapter (OpenAI Images
+# API -> OpenRouter Images API). Compose also has safe defaults, but writing
+# them to .env makes the state visible and survives a compose-file change.
+# Only blank values are filled, so an explicit operator choice always wins.
+say "Ensuring image-generation defaults in .env"
+ensure_default_env ENABLE_IMAGE_GENERATION True
+ensure_default_env IMAGE_GENERATION_ENGINE openai
+ensure_default_env IMAGES_OPENAI_API_BASE_URL http://openrouter-images:8080/v1
+ensure_default_env IMAGE_GENERATION_MODEL openai/gpt-image-2
+ensure_default_env IMAGE_SIZE 1024x1024
+if [ -z "${OPENROUTER_API_KEY:-}" ]; then
+  warn "OPENROUTER_API_KEY is still empty — image generation will fail until it is set in .env."
 fi
 
 # ---- data sync (always fresh) ----------------------------------------------
@@ -112,12 +142,31 @@ if [ "$DO_FILES" = 1 ] && [ "$DRY" != 1 ]; then
   fi
 fi
 
-# ---- bring up the container -------------------------------------------------
-say "Bringing up the open-webui service"
+# ---- bring up the containers ------------------------------------------------
+say "Bringing up the openrouter-images and open-webui services"
 if [ "$DRY" = 1 ]; then
-  echo "    DRY: podman-compose up -d open-webui"
+  echo "    DRY: podman-compose up -d --build $CONTAINER_OPENROUTER_IMAGES $CONTAINER_OPENWEBUI"
 else
-  if podman compose version >/dev/null 2>&1; then podman compose up -d open-webui; else podman-compose up -d open-webui; fi
+  if podman compose version >/dev/null 2>&1; then
+    podman compose up -d --build "$CONTAINER_OPENROUTER_IMAGES" "$CONTAINER_OPENWEBUI"
+  else
+    podman-compose up -d --build "$CONTAINER_OPENROUTER_IMAGES" "$CONTAINER_OPENWEBUI"
+  fi
+fi
+
+# ---- wait for the image adapter --------------------------------------------
+if [ "$DRY" != 1 ]; then
+  say "Waiting for the OpenRouter image adapter"
+  up=0
+  for _ in $(seq 1 30); do
+    if podman exec "$CONTAINER_OPENROUTER_IMAGES" python3 -c \
+         "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).status==200 else 1)" \
+         >/dev/null 2>&1; then
+      ok "openrouter-images is up."; up=1; break
+    fi
+    sleep 2
+  done
+  [ "$up" = 1 ] || warn "openrouter-images did not answer — check: podman logs openrouter-images"
 fi
 
 # ---- wait for health --------------------------------------------------------
@@ -131,6 +180,22 @@ if [ "$DRY" != 1 ]; then
     sleep 5
   done
   [ "$up" = 1 ] || warn "Open WebUI did not answer in 5 min — check: podman logs open-webui"
+fi
+
+# ---- apply DB-backed image settings (optional) -----------------------------
+# Env vars only seed Open WebUI's config DB on first boot; existing
+# image_generation.* rows win. With an admin token we can update them through
+# the same API the admin UI uses. Without one, the env defaults still apply on
+# a fresh DB, and the settings can be applied once in Admin > Settings > Images.
+if [ "$DRY" != 1 ]; then
+  if [ -n "${OPENWEBUI_ADMIN_TOKEN:-}" ]; then
+    say "Applying image-generation settings through the Open WebUI admin API"
+    OPENWEBUI_ADMIN_TOKEN="$OPENWEBUI_ADMIN_TOKEN" \
+      bash scripts/configure-openwebui-images.sh --base http://127.0.0.1:3000 \
+      || warn "Could not apply image settings via the API — use Admin > Settings > Images."
+  else
+    warn "OPENWEBUI_ADMIN_TOKEN not set; if webui.db already has image_generation.* rows, apply them once via Admin > Settings > Images or scripts/configure-openwebui-images.sh."
+  fi
 fi
 
 if [ "$DRY" != 1 ]; then

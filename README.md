@@ -510,6 +510,15 @@ It rsyncs `webui.db` + `uploads/` (skipping the transient `webui.db-wal`/`-shm`,
 snapshot's `install.sh` into `.env` (never printed/committed), brings up the
 `open-webui` service, waits for `/api/version`, and reloads nginx.
 
+**Image generation:** Open WebUI's OpenAI image engine is pointed at the
+internal `openrouter-images` adapter (OpenAI Images API -> OpenRouter
+`POST /api/v1/images`), reusing the same `OPENROUTER_API_KEY`. The adapter has
+no published port and is only on the compose `web` network. See
+[OPENWEBUI_IMAGES.md](OPENWEBUI_IMAGES.md) for the request-shape findings,
+configuration, verification commands, per-model/permission setup, and
+rollback. `scripts/configure-openwebui-images.sh` is the opt-in admin-API
+helper for settings that are stored in the database.
+
 Notes: `vector_db/` is kept by default because the container path
 (`/app/backend/data`) is stable; use `--drop-vector-db` if RAG/embeddings
 misbehave. The container is localhost-published on `127.0.0.1:3000` for health

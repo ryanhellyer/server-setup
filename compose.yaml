@@ -72,6 +72,22 @@ services:
     environment:
       WEBUI_URL: ${OPENWEBUI_URL:-https://chat.hellyer.kiwi}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # Image generation is configured SEPARATELY from chat connections.
+      # The internal `openrouter-images` adapter exposes the OpenAI Images API
+      # and translates it to OpenRouter's /api/v1/images endpoint.
+      ENABLE_IMAGE_GENERATION: ${ENABLE_IMAGE_GENERATION:-True}
+      IMAGE_GENERATION_ENGINE: ${IMAGE_GENERATION_ENGINE:-openai}
+      IMAGES_OPENAI_API_BASE_URL: ${IMAGES_OPENAI_API_BASE_URL:-http://openrouter-images:8080/v1}
+      IMAGES_OPENAI_API_KEY: ${OPENROUTER_API_KEY:-}
+      IMAGE_GENERATION_MODEL: ${IMAGE_GENERATION_MODEL:-openai/gpt-image-2}
+      IMAGE_SIZE: ${IMAGE_SIZE:-1024x1024}
+      # Optional image editing (same adapter). Off by default; set
+      # ENABLE_IMAGE_EDIT=True in .env to enable the edit tool.
+      ENABLE_IMAGE_EDIT: ${ENABLE_IMAGE_EDIT:-False}
+      IMAGE_EDIT_ENGINE: ${IMAGE_EDIT_ENGINE:-openai}
+      IMAGE_EDIT_MODEL: ${IMAGE_EDIT_MODEL:-openai/gpt-image-2}
+      IMAGES_EDIT_OPENAI_API_BASE_URL: ${IMAGES_EDIT_OPENAI_API_BASE_URL:-http://openrouter-images:8080/v1}
+      IMAGES_EDIT_OPENAI_API_KEY: ${OPENROUTER_API_KEY:-}
     volumes:
       - ${WWW_ROOT:-/home/ryan/www}/chat.hellyer.kiwi:/app/backend/data
     ports:
@@ -103,6 +119,40 @@ services:
         limits:
           cpus: "1.0"
           memory: 1536m
+
+  # openrouter-images — internal OpenAI Images API -> OpenRouter Images API
+  # adapter for Open WebUI. Open WebUI always requests
+  # `{base}/images/generations` (and `/images/edits`), whereas OpenRouter's
+  # endpoint is `/api/v1/images` and uses aspect_ratio/resolution instead of
+  # OpenAI pixel sizes.
+  #
+  # No `ports:` mapping: it is reachable only by name (`openrouter-images`) on
+  # the compose `web` network, so it is not public and does not touch the
+  # Authelia/forward-auth path. Open WebUI reaches it server-side, so the key
+  # never reaches the browser.
+  openrouter-images:
+    build: ./openrouter-images
+    container_name: openrouter-images
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_API_BASE: ${OPENROUTER_API_BASE:-https://openrouter.ai/api/v1}
+      OPENROUTER_IMAGES_MODEL: ${IMAGE_GENERATION_MODEL:-openai/gpt-image-2}
+      OPENROUTER_IMAGE_SIZE: ${IMAGE_SIZE:-1024x1024}
+      OPENROUTER_IMAGE_OUTPUT_FORMAT: ${OPENROUTER_IMAGE_OUTPUT_FORMAT:-png}
+      OPENROUTER_IMAGES_TIMEOUT: ${OPENROUTER_IMAGES_TIMEOUT:-180}
+    networks: [web]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
 
   # GoatCounter (stats.hellyer.kiwi) — self-hosted, privacy-friendly web
   # analytics for every domain in stats-domain-list.txt. A single Go binary +

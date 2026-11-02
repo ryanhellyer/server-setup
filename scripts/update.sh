@@ -90,6 +90,7 @@ UPSTREAM=(
   # bases for the locally-built images
   docker.io/ubuntu:24.04
   docker.io/node:22-slim
+  docker.io/python:3.12-slim
 )
 for img in "${UPSTREAM[@]}"; do
   log "pulling $img"
