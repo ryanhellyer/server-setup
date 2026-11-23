@@ -227,8 +227,11 @@ services:
   # Storage is a local SQLite DB under ~/www/auth.hellyer.kiwi (the same model
   # as goatcounter): it sits under the web root so the nightly backup snapshots
   # it like a site, and it needs no separate database container. Sessions live
-  # in the existing valkey container. Runs as root (`user: "0:0"`) so writes
-  # into the ryan:www-data tree (reset by fix-perms.sh) never fail.
+  # in the DEDICATED `authelia-valkey` container below (persisted), not in the
+  # shared `valkey` cache: a cache may evict or lose its contents at any time,
+  # and for a session store that means every browser is logged out. Runs as
+  # root (`user: "0:0"`) so writes into the ryan:www-data tree (reset by
+  # fix-perms.sh) never fail.
   #
   # NOTE: this data dir is bind-mounted for the container; the portal itself is
   # a proxy vhost (nginx/conf.d/auth-site.conf) and has no nginx `root` under
@@ -245,15 +248,17 @@ services:
       AUTHELIA_SESSION_SECRET: ${AUTHELIA_SESSION_SECRET:-}
       AUTHELIA_STORAGE_ENCRYPTION_KEY: ${AUTHELIA_STORAGE_ENCRYPTION_KEY:-}
       AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET: ${AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET:-}
-      AUTHELIA_SESSION_REDIS_HOST: valkey
+      AUTHELIA_SESSION_REDIS_HOST: authelia-valkey
       AUTHELIA_SESSION_REDIS_PORT: "6379"
     volumes:
       - ./authelia:/config:ro
       - ${WWW_ROOT:-/home/ryan/www}/auth.hellyer.kiwi:/data
     # Give the SMTP notifier a relay to talk to on first boot. compose only
-    # orders startup; authelia's own `restart: unless-stopped` covers the race.
+    # orders startup; authelia's own `restart: unless-stopped` covers the race
+    # (same for the session store).
     depends_on:
       - mailrelay
+      - authelia-valkey
     networks: [web, backend]
     restart: unless-stopped
     deploy:
@@ -315,9 +320,39 @@ services:
     networks: [backend]
     restart: unless-stopped
 
+  # Dedicated session store for Authelia. Deliberately SEPARATE from the shared
+  # `valkey` cache below: sessions must not be evicted by cache churn or wiped
+  # by a cache restart, and unlike a cache they must not start empty.
+  #
+  # Persistence (AOF + the named `authelia-valkey-data` volume) is what fixes
+  # the repeated-login problem: the volume outlives
+  # `compose up --force-recreate` (every scripts/update.sh run), `podman restart
+  # authelia-valkey`, reboots and crashes. `compose down -v` or `podman volume
+  # prune` still deletes it — that costs one re-login, nothing else.
+  #
+  # `allkeys-lru` is a safety valve, not the normal path. Authelia 4.39 stores a
+  # session for every unauthenticated authz request (mostly bots hitting
+  # wp-json/wp-login), so the keyspace grows steadily. Under pressure LRU drops
+  # those never-reused anonymous sessions first and keeps the sessions that are
+  # refreshed on every request. See valkey/authelia.conf.
+  authelia-valkey:
+    image: docker.io/valkey/valkey:8-alpine
+    container_name: authelia-valkey
+    command: ["valkey-server", "/etc/valkey/authelia.conf", "--maxmemory", "${AUTHELIA_VALKEY_MAXMEMORY:-1gb}"]
+    environment:
+      AUTHELIA_VALKEY_MAXMEMORY: ${AUTHELIA_VALKEY_MAXMEMORY:-1gb}
+    volumes:
+      - ./valkey/authelia.conf:/etc/valkey/authelia.conf:ro
+      - authelia-valkey-data:/data
+    networks: [backend]
+    restart: unless-stopped
+
   # Valkey is a drop-in, RESP-compatible fork of Redis. It keeps the `redis`
   # network alias so existing WP/Laravel cache configs (which use host `redis`)
   # keep working unchanged; new configs can use `valkey`.
+  #
+  # This is the CACHE instance: no volume, no persistence, evicting. Never move
+  # Authelia sessions or any other must-survive-restart data onto it.
   valkey:
     image: docker.io/valkey/valkey:8-alpine
     container_name: valkey
@@ -334,6 +369,9 @@ services:
 
 volumes:
   php-socket:
+  # Authelia sessions. AOF-backed named volume: survives recreate/restart/reboot.
+  # `compose down -v` or `podman volume prune` deletes it (one forced re-login).
+  authelia-valkey-data:
   # Persisted mailrelay spool: messages that have been accepted but not yet
   # forwarded to Telegram survive a container restart/crash.
   mailrelay-spool:

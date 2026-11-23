@@ -596,15 +596,35 @@ rather than gated: `wp-cron.php` (cron runs from `server-wpcron.timer`) and any
 
 * Container: `compose.yaml` service `authelia`, config in `authelia/`, data
   (SQLite DB + user database + notifier) at `~/www/auth.hellyer.kiwi:/data` so
-  the nightly `~/www` snapshot backs it up. Sessions live in the existing
-  `valkey` container. **This is a data dir, not a site root** — the portal is a
-  proxy vhost (`proxy_pass` to the container), so nginx has no `root` for it
-  and no other per-domain files appear under `~/www/auth.hellyer.kiwi`.
+  the nightly `~/www` snapshot backs it up. **Sessions live in `authelia-valkey`**
+  — a dedicated Valkey with AOF persistence and its own named volume
+  (`authelia-valkey-data`), *not* the shared `valkey` cache. That is what makes
+  a login survive `scripts/update.sh` (`--force-recreate`), `podman restart`,
+  reboots and cache churn. **This is a data dir, not a site root** — the portal
+  is a proxy vhost (`proxy_pass` to the container), so nginx has no `root` for
+  it and no other per-domain files appear under `~/www/auth.hellyer.kiwi`.
+* Session lifetime: `expiration`, `inactivity` and `remember_me` are all `1M`
+  (**30 days**). The idle clock is refreshed on every request, so normal use
+  keeps you signed in; 30 days with no access at all logs you out. Ticking
+  "keep me signed in" disables the inactivity check for that session. Sessions
+  are now durable — only `podman compose down -v` / `podman volume prune`
+  deletes them (one forced re-login).
+* Note on Redis growth: Authelia 4.39 stores a session for every
+  *unauthenticated* authz request, so the bot traffic on `wp-json`/`wp-login`
+  grows the keyspace by a few thousand keys a day (they expire after 30 days).
+  `authelia-valkey` uses `allkeys-lru` as a safety valve so those cold, unused
+  keys are dropped before any session that is in use. See `valkey/authelia.conf`.
 * Portal: `auth.hellyer.kiwi` (`nginx/conf.d/auth-site.conf`), on the shared
   `pressabl` TLS cert.
-* nginx asks Authelia per-request via `auth_request`
-  (`nginx/snippets/authelia-authz-location.conf` + `authelia-authrequest.conf`);
-  unauthenticated visitors get a 302 to the portal.
+* Each request to a gated site is authorised by Authelia over `auth_request`.
+  When the session is missing, nginx sends the browser to the portal (302). The
+  WebSocket endpoint used by Open WebUI (`/ws/socket.io`) is the one exception:
+  it is not gated, because a WebSocket handshake cannot follow a 302 and a lost
+  session would make socket.io retry the handshake indefinitely (50k
+  requests/day was observed from one idle tab). Open WebUI authenticates that
+  socket itself; every other request stays gated. Keep this in mind when adding
+  another socket-based app: gate its document/API paths, and let its own auth
+  handle the upgraded connection.
 * Secrets (`AUTHELIA_SESSION_SECRET`, `AUTHELIA_STORAGE_ENCRYPTION_KEY`,
   `AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET`) are generated into
   `.env` by `deploy.sh` on first run.

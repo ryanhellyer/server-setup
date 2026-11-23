@@ -167,7 +167,12 @@ session:
       authelia_url: 'https://auth.hellyer.kiwi'
       default_redirection_url: 'https://chat.hellyer.kiwi'
   redis:
-    host: 'valkey'
+    # Dedicated, persistent session store (compose service `authelia-valkey`).
+    # The env var AUTHELIA_SESSION_REDIS_HOST in compose.yaml overrides this,
+    # but keep both in sync. Never point this at the shared `valkey` cache: it
+    # has no persistence, so a weekly update (`--force-recreate`) or a reboot
+    # would destroy every session and force everyone to log in again.
+    host: 'authelia-valkey'
     port: 6379
     database_index: 0
     maximum_active_connections: 8
