@@ -579,8 +579,9 @@ is listed in `certbot/domains.txt`.
 ## Authelia (forward-auth / SSO)
 
 **Authelia** gates access to protected vhosts: `chat.hellyer.kiwi`,
-`storage.hellyer.kiwi`, `invoices.hellyer.kiwi`, `admin.ryan.hellyer.kiwi`,
-`health.hellyer.kiwi`, `secure.hellyer.kiwi`, `dad.hellyer.kiwi` and
+`storage.hellyer.kiwi`, `photos.hellyer.kiwi`, `invoices.hellyer.kiwi`,
+`admin.ryan.hellyer.kiwi`, `health.hellyer.kiwi`, `secure.hellyer.kiwi`,
+`dad.hellyer.kiwi` and
 `phone.hellyer.kiwi`. On `secure`/`dad` it replaces the old HTTP basic auth.
 The gate is reusable for future sites/pages.
 
